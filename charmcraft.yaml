@@ -1,3 +1,6 @@
+# Copyright 2025 Canonical Ltd.
+# See LICENSE file for licensing details.
+
 name: hook-service
 type: charm
 title: Hook Service Operator
@@ -11,6 +14,10 @@ links:
 charm-user: non-root
 platforms:
   ubuntu@22.04:amd64:
+
+assumes:
+  - juju >= 3.0.2
+  - k8s-api
 
 config:
   options:
@@ -33,7 +40,6 @@ config:
         Acceptable values are: "info", "debug", "warning", "error" and "critical"
       default: "info"
       type: string
-    support_email:
     cpu:
       description: |
         K8s cpu resource limit, e.g. "1" or "500m". Default is unset (no limit). This value is used
@@ -48,6 +54,21 @@ config:
         automatically deduced from it).
         See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
       type: string
+    salesforce_domain:
+      description: |
+        The Salesforce domain URL. E.g. https://login.test.salesfoce.com
+      type: string
+    salesforce_consumer_secret:
+      description: |
+        A secret with the consumer key/secret pair to use when calling the salesforce API.
+
+        The secret must contain the keys `consumer-key` and `consumer-secret`
+      type: secret
+    salesforce_enabled:
+      description: |
+        Whether the salesforce integration is enabled.
+      type: boolean
+      default: true
 
 requires:
   logging:
@@ -59,6 +80,11 @@ requires:
     optional: true
     description: |
       Provides traces to COS Tempo instance
+  ingress:
+    interface: traefik_route
+    limit: 1
+    optional: true
+    description: Ingress used to expose the service to the public internet
 
 provides:
   metrics-endpoint:
@@ -66,6 +92,11 @@ provides:
     optional: True
     description: |
       Provides application metrics to COS Prometheus instance
+  grafana-dashboard:
+    interface: grafana_dashboard
+    optional: True
+    description: |
+      Forwards the built-in grafana dashboard(s) for monitoring hydra.
 
 containers:
   hook-service:
@@ -77,7 +108,7 @@ resources:
   oci-image:
     type: oci-image
     description: OCI image for hook-service
-    upstream-source: ghcr.io/canonical/hook-service:v0.0.0
+    upstream-source: ghcr.io/canonical/hook-service:main
 
 parts:
   charm:
