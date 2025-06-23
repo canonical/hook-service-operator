@@ -1,0 +1,5 @@
+pytest
+juju
+pytest-operator==0.42.0
+httpx
+-r requirements.txt
