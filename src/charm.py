@@ -1,104 +1,200 @@
 #!/usr/bin/env python3
-# Copyright 2022 Canonical Ltd.
+# Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
-#
-# Learn more at: https://juju.is/docs/sdk
 
-"""Charm the service.
-
-Refer to the following post for a quick-start guide that will help you
-develop a new k8s charm using the Operator Framework:
-
-    https://discourse.charmhub.io/t/4208
-"""
+"""A Juju charm for Identity Platform Hook Service."""
 
 import logging
+from secrets import token_hex
 
-from ops.charm import CharmBase
-from ops.framework import StoredState
-from ops.main import main
-from ops.model import ActiveStatus
+import ops
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+from charms.loki_k8s.v1.loki_push_api import LogForwarder
+from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
+    K8sResourcePatchFailedEvent,
+    KubernetesComputeResourcesPatch,
+    ResourceRequirements,
+    adjust_resource_requirements,
+)
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
+from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
+
+from configs import CharmConfig
+from constants import (
+    API_TOKEN_SECRET_KEY,
+    API_TOKEN_SECRET_LABEL,
+    GRAFANA_DASHBOARD_INTEGRATION_NAME,
+    INGRESS_INTEGRATION_NAME,
+    LOGGING_INTEGRATION_NAME,
+    PORT,
+    PROMETHEUS_SCRAPE_INTEGRATION_NAME,
+    TEMPO_TRACING_INTEGRATION_NAME,
+    WORKLOAD_CONTAINER,
+)
+from exceptions import PebbleError
+from integrations import IngressData, TracingData
+from secret import Secrets
+from services import PebbleService, WorkloadService
+from utils import (
+    EVENT_DEFER_CONDITIONS,
+    NOOP_CONDITIONS,
+    container_connectivity,
+    leader_unit,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class OperatorTemplateCharm(CharmBase):
-    """Charm the service."""
+class HookServiceOperatorCharm(ops.CharmBase):
+    """Charm the application."""
 
-    _stored = StoredState()
+    def __init__(self, framework: ops.Framework) -> None:
+        super().__init__(framework)
 
-    def __init__(self, *args):
-        super().__init__(*args)
-        self.framework.observe(self.on.httpbin_pebble_ready, self._on_httpbin_pebble_ready)
-        self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.observe(self.on.fortune_action, self._on_fortune_action)
-        self._stored.set_default(things=[])
+        self._workload_service = WorkloadService(self.unit)
+        self._pebble_service = PebbleService(self.unit)
+        self._secrets = Secrets(self.model)
+        self._config = CharmConfig(self.config, self.model)
 
-    def _on_httpbin_pebble_ready(self, event):
-        """Define and start a workload using the Pebble API.
+        self.ingress = TraefikRouteRequirer(
+            self,
+            self.model.get_relation(INGRESS_INTEGRATION_NAME),
+            INGRESS_INTEGRATION_NAME,
+            raw=True,
+        )
 
-        TEMPLATE-TODO: change this example to suit your needs.
-        You'll need to specify the right entrypoint and environment
-        configuration for your specific workload. Tip: you can see the
-        standard entrypoint of an existing container using docker inspect
-
-        Learn more about Pebble layers at https://github.com/canonical/pebble
-        """
-        # Get a reference the container attribute on the PebbleReadyEvent
-        container = event.workload
-        # Define an initial Pebble layer configuration
-        pebble_layer = {
-            "summary": "httpbin layer",
-            "description": "pebble config layer for httpbin",
-            "services": {
-                "httpbin": {
-                    "override": "replace",
-                    "summary": "httpbin",
-                    "command": "gunicorn -b 0.0.0.0:80 httpbin:app -k gevent",
-                    "startup": "enabled",
-                    "environment": {"thing": self.model.config["thing"]},
+        self.metrics_endpoint = MetricsEndpointProvider(
+            self,
+            relation_name=PROMETHEUS_SCRAPE_INTEGRATION_NAME,
+            jobs=[
+                {
+                    "job_name": "hook_service_metrics",
+                    "metrics_path": "/api/v0/metrics",
+                    "static_configs": [
+                        {
+                            "targets": [f"*:{PORT}"],
+                        }
+                    ],
                 }
-            },
-        }
-        # Add initial Pebble config layer using the Pebble API
-        container.add_layer("httpbin", pebble_layer, combine=True)
-        # Autostart any services that were defined with startup: enabled
-        container.autostart()
-        # Learn more about statuses in the SDK docs:
-        # https://juju.is/docs/sdk/constructs#heading--statuses
-        self.unit.status = ActiveStatus()
+            ],
+        )
 
-    def _on_config_changed(self, _):
-        """Just an example to show how to deal with changed configuration.
+        self.resources_patch = KubernetesComputeResourcesPatch(
+            self,
+            WORKLOAD_CONTAINER,
+            resource_reqs_func=self._resource_reqs_from_config,
+        )
 
-        TEMPLATE-TODO: change this example to suit your needs.
-        If you don't need to handle config, you can remove this method,
-        the hook created in __init__.py for it, the corresponding test,
-        and the config.py file.
+        # Loki logging relation
+        self._log_forwarder = LogForwarder(self, relation_name=LOGGING_INTEGRATION_NAME)
 
-        Learn more about config at https://juju.is/docs/sdk/config
-        """
-        current = self.config["thing"]
-        if current not in self._stored.things:
-            logger.debug("found a new thing: %r", current)
-            self._stored.things.append(current)
+        self._grafana_dashboards = GrafanaDashboardProvider(
+            self,
+            relation_name=GRAFANA_DASHBOARD_INTEGRATION_NAME,
+        )
 
-    def _on_fortune_action(self, event):
-        """Just an example to show how to receive actions.
+        self.tracing_requirer = TracingEndpointRequirer(
+            self, relation_name=TEMPO_TRACING_INTEGRATION_NAME, protocols=["otlp_http"]
+        )
 
-        TEMPLATE-TODO: change this example to suit your needs.
-        If you don't need to handle actions, you can remove this method,
-        the hook created in __init__.py for it, the corresponding test,
-        and the actions.py file.
+        framework.observe(self.on.hook_service_pebble_ready, self._on_pebble_ready)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.leader_elected, self._on_leader_elected)
+        self.framework.observe(self.on.leader_settings_changed, self._on_leader_settings_changed)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
 
-        Learn more about actions at https://juju.is/docs/sdk/actions
-        """
-        fail = event.params["fail"]
-        if fail:
-            event.fail(fail)
-        else:
-            event.set_results({"fortune": "A bug in the code is worth two in the documentation."})
+        # resource patching
+        self.framework.observe(
+            self.resources_patch.on.patch_failed, self._on_resource_patch_failed
+        )
+
+        # ingress
+        self.framework.observe(
+            self.ingress.on.ready,
+            self._on_ingress_changed,
+        )
+
+    @property
+    def _pebble_layer(self) -> ops.pebble.Layer:
+        return self._pebble_service.render_pebble_layer(
+            TracingData.load(self.tracing_requirer),
+            self._secrets,
+            self._config,
+        )
+
+    @leader_unit
+    def _prepare_secrets(self) -> None:
+        self._secrets[API_TOKEN_SECRET_LABEL] = {API_TOKEN_SECRET_KEY: token_hex(16)}
+
+    @leader_unit
+    def _on_ingress_changed(self, event: ops.RelationEvent) -> None:
+        if self.ingress.is_ready():
+            ingress_config = IngressData.load(self.ingress).config
+            self.ingress.submit_to_traefik(ingress_config)
+        self._holistic_handler(event)
+
+    def _on_leader_elected(self, event: ops.LeaderElectedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_leader_settings_changed(self, event: ops.LeaderSettingsChangedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_config_changed(self, event: ops.ConfigChangedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_secret_changed(self, event: ops.SecretChangedEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
+        self._workload_service.open_port()
+        self._holistic_handler(event)
+
+        self._workload_service.set_version()
+
+    def _on_resource_patch_failed(self, event: K8sResourcePatchFailedEvent) -> None:
+        logger.error(f"Failed to patch resource constraints: {event.message}")
+        self.unit.status = ops.BlockedStatus(event.message)
+
+    def _holistic_handler(self, event: ops.EventBase) -> None:
+        if not all(condition(self) for condition in NOOP_CONDITIONS):
+            return
+
+        if not all(condition(self) for condition in EVENT_DEFER_CONDITIONS):
+            event.defer()
+            return
+
+        if not self._secrets.is_ready():
+            if not self.unit.is_leader():
+                return
+            self._prepare_secrets()
+
+        try:
+            self._pebble_service.plan(self._pebble_layer)
+        except PebbleError:
+            logger.error(
+                f"Failed to plan pebble layer, please check the {WORKLOAD_CONTAINER} container logs"
+            )
+            raise
+
+    def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:
+        if not container_connectivity(self):
+            event.add_status(ops.WaitingStatus("Container is not connected yet"))
+
+        if configs := self._config.get_missing_config_keys():
+            event.add_status(ops.BlockedStatus(f"Missing required configuration: {configs}"))
+
+        if not self._secrets.is_ready():
+            event.add_status(ops.WaitingStatus("Waiting for secrets creation"))
+
+        event.add_status(ops.ActiveStatus())
+
+    def _resource_reqs_from_config(self) -> ResourceRequirements:
+        limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}
+        requests = {"cpu": "100m", "memory": "200Mi"}
+        return adjust_resource_requirements(limits, requests, adhere_to_requests=True)
 
 
-if __name__ == "__main__":
-    main(OperatorTemplateCharm)
+if __name__ == "__main__":  # pragma: nocover
+    ops.main(HookServiceOperatorCharm)
