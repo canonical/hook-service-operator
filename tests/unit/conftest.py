@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, PropertyMock, create_autospec
 import pytest
 from ops import CollectStatusEvent, EventBase, testing
 from ops.model import Container, Unit
+from ops.testing import Model
 from pytest_mock import MockerFixture
 
 
@@ -18,10 +19,15 @@ def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
     )
     mocker.patch.multiple(
         "charm.KubernetesComputeResourcesPatch",
-        _namespace="kratos-model",
+        _namespace="model",
         _patch=lambda *a, **kw: True,
         is_ready=lambda *a, **kw: True,
     )
+
+
+@pytest.fixture
+def model() -> Model:
+    return Model()
 
 
 @pytest.fixture

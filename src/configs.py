@@ -12,6 +12,7 @@ from constants import (
     CONFIG_CONSUMER_SECRET_SECRET_KEY,
 )
 from env_vars import EnvVars
+from exceptions import InvalidSalesforceConfig
 
 ServiceConfigs: TypeAlias = Mapping[str, Any]
 
@@ -25,11 +26,19 @@ class CharmConfig:
         self._config = config
         self._model = model
 
+    def _get_secret(self, id) -> dict[str, str]:
+        secret = self._model.get_secret(id=id)
+        return secret.get_content(refresh=True)
+
     def _get_salesforce_consumer_info(self) -> Tuple[str, str]:
-        secret_id = self._config["salesforce_consumer_secret"]
-        secret = self._model.get_secret(id=secret_id)
-        content = secret.get_content(refresh=True)
-        return content[CONFIG_CONSUMER_KEY_SECRET_KEY], content[CONFIG_CONSUMER_SECRET_SECRET_KEY]
+        try:
+            secret_id = self._config["salesforce_consumer_secret"]
+            content = self._get_secret(secret_id)
+            return content[CONFIG_CONSUMER_KEY_SECRET_KEY], content[
+                CONFIG_CONSUMER_SECRET_SECRET_KEY
+            ]
+        except Exception as e:
+            raise InvalidSalesforceConfig from e
 
     def get_missing_config_keys(self) -> List:
         """Get missing config keys."""
@@ -48,11 +57,9 @@ class CharmConfig:
         }
         if self._config.get("salesforce_enabled"):
             consumer = self._get_salesforce_consumer_info()
-            env.update(
-                {
-                    "SALESFORCE_CONSUMER_KEY": consumer[0],
-                    "SALESFORCE_CONSUMER_SECRET": consumer[1],
-                    "SALESFORCE_DOMAIN": self._config.get("salesforce_domain"),
-                }
-            )
+            env.update({
+                "SALESFORCE_CONSUMER_KEY": consumer[0],
+                "SALESFORCE_CONSUMER_SECRET": consumer[1],
+                "SALESFORCE_DOMAIN": self._config.get("salesforce_domain"),
+            })
         return env
