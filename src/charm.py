@@ -9,6 +9,7 @@ from secrets import token_hex
 
 import ops
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+from charms.hydra.v0.hydra_token_hook import HydraHookProvider
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     K8sResourcePatchFailedEvent,
@@ -33,7 +34,7 @@ from constants import (
     WORKLOAD_CONTAINER,
 )
 from exceptions import PebbleError
-from integrations import IngressData, TracingData
+from integrations import HydraHookIntegration, IngressData, TracingData
 from secret import Secrets
 from services import PebbleService, WorkloadService
 from utils import (
@@ -56,6 +57,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self._pebble_service = PebbleService(self.unit)
         self._secrets = Secrets(self.model)
         self._config = CharmConfig(self.config, self.model)
+
+        self.hydra_token_hook = HydraHookProvider(self)
+        self.hydra_token_hook_integration = HydraHookIntegration(self.hydra_token_hook)
 
         self.ingress = TraefikRouteRequirer(
             self,
@@ -86,7 +90,17 @@ class HookServiceOperatorCharm(ops.CharmBase):
             resource_reqs_func=self._resource_reqs_from_config,
         )
 
-        # Loki logging relation
+        self.framework.observe(self.on.hook_service_pebble_ready, self._on_pebble_ready)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.leader_elected, self._on_leader_elected)
+        self.framework.observe(self.on.leader_settings_changed, self._on_leader_settings_changed)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
+
+        # Hydra token hook relation
+        self.framework.observe(self.hydra_token_hook.on.ready, self._on_hydra_hook_ready)
+
+        # COS relations
         self._log_forwarder = LogForwarder(self, relation_name=LOGGING_INTEGRATION_NAME)
 
         self._grafana_dashboards = GrafanaDashboardProvider(
@@ -97,13 +111,6 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.tracing_requirer = TracingEndpointRequirer(
             self, relation_name=TEMPO_TRACING_INTEGRATION_NAME, protocols=["otlp_http"]
         )
-
-        framework.observe(self.on.hook_service_pebble_ready, self._on_pebble_ready)
-        self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.observe(self.on.leader_elected, self._on_leader_elected)
-        self.framework.observe(self.on.leader_settings_changed, self._on_leader_settings_changed)
-        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
-        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
 
         # resource patching
         self.framework.observe(
@@ -124,6 +131,12 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._config,
         )
 
+    @property
+    def _hydra_hook_url(self) -> str:
+        return (
+            f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{PORT}/api/v0/hook/hydra"
+        )
+
     @leader_unit
     def _prepare_secrets(self) -> None:
         self._secrets[API_TOKEN_SECRET_LABEL] = {API_TOKEN_SECRET_KEY: token_hex(16)}
@@ -133,6 +146,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         if self.ingress.is_ready():
             ingress_config = IngressData.load(self.ingress).config
             self.ingress.submit_to_traefik(ingress_config)
+        self._holistic_handler(event)
+
+    def _on_hydra_hook_ready(self, event: ops.RelationEvent) -> None:
         self._holistic_handler(event)
 
     def _on_leader_elected(self, event: ops.LeaderElectedEvent) -> None:
@@ -169,6 +185,12 @@ class HookServiceOperatorCharm(ops.CharmBase):
             if not self.unit.is_leader():
                 return
             self._prepare_secrets()
+
+        if self.hydra_token_hook_integration.is_ready():
+            self.hydra_token_hook_integration.update_relation_data(
+                self._hydra_hook_url,
+                self._secrets.api_token,
+            )
 
         try:
             self._pebble_service.plan(self._pebble_layer)

@@ -8,12 +8,18 @@ import logging
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
+from charms.hydra.v0.hydra_token_hook import (
+    AuthConfig,
+    HydraHookProvider,
+    ProviderData,
+    _AuthConfig,
+)
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from jinja2 import Template
 from pydantic import AnyHttpUrl
 
-from constants import PORT
+from constants import HYDRA_TOKEN_HOOK_INTEGRATION_NAME, PORT
 from env_vars import EnvVars
 
 logger = logging.getLogger(__name__)
@@ -82,4 +88,27 @@ class TracingData:
         return TracingData(
             is_ready=is_ready,
             http_endpoint=http_endpoint.geturl().replace(f"{http_endpoint.scheme}://", "", 1),  # type: ignore[arg-type]
+        )
+
+
+class HydraHookIntegration:
+    def __init__(self, provider: HydraHookProvider) -> None:
+        self._provider = provider
+
+    def is_ready(self) -> bool:
+        rel = self._provider._charm.model.get_relation(HYDRA_TOKEN_HOOK_INTEGRATION_NAME)
+        return rel and rel.active
+
+    def update_relation_data(self, hook_url: str, api_token: str):
+        self._provider.update_relations_app_data(
+            ProviderData(
+                url=hook_url,
+                auth=AuthConfig(
+                    config=_AuthConfig(
+                        name="Authorization",
+                        value=api_token,
+                        in_="header",
+                    )
+                ),
+            )
         )

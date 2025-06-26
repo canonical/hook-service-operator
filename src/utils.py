@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 from ops.charm import CharmBase
 
-from constants import INGRESS_INTEGRATION_NAME, WORKLOAD_CONTAINER
+from constants import (
+    INGRESS_INTEGRATION_NAME,
+    WORKLOAD_CONTAINER,
+)
 
 if TYPE_CHECKING:
     from charm import HookServiceOperatorCharm
