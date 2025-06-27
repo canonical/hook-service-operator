@@ -9,10 +9,8 @@ from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from charms.hydra.v0.hydra_token_hook import (
-    AuthConfig,
     HydraHookProvider,
     ProviderData,
-    _AuthConfig,
 )
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
@@ -99,16 +97,12 @@ class HydraHookIntegration:
         rel = self._provider._charm.model.get_relation(HYDRA_TOKEN_HOOK_INTEGRATION_NAME)
         return rel and rel.active
 
-    def update_relation_data(self, hook_url: str, api_token: str):
+    def update_relation_data(self, hook_url: str, api_token: str) -> None:
         self._provider.update_relations_app_data(
             ProviderData(
                 url=hook_url,
-                auth=AuthConfig(
-                    config=_AuthConfig(
-                        name="Authorization",
-                        value=api_token,
-                        in_="header",
-                    )
-                ),
+                auth_config_name="Authorization",
+                auth_config_value=api_token,
+                auth_config_in_="header",
             )
         )
