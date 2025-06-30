@@ -89,14 +89,18 @@ requires:
 provides:
   metrics-endpoint:
     interface: prometheus_scrape
-    optional: True
+    optional: true
     description: |
       Provides application metrics to COS Prometheus instance
   grafana-dashboard:
     interface: grafana_dashboard
-    optional: True
+    optional: true
     description: |
       Forwards the built-in grafana dashboard(s) for monitoring hydra.
+  hydra-token-hook:
+    interface: hydra_token_hook
+    optional: true
+    description: Used to configure the hydra token hook
 
 containers:
   hook-service:
