@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/canonical/hook-service-operator/compare/v1.0.0...v1.0.1) (2025-06-30)
+
+
+### Bug Fixes
+
+* add terraform plan ([3dedfc4](https://github.com/canonical/hook-service-operator/commit/3dedfc4be669b7f09d2a5bd3634234f762b7837b))
+
 ## 1.0.0 (2025-06-30)
 
 
