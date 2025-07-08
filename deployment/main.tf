@@ -60,7 +60,7 @@ data "juju_secret" "salesforce_consumer_secret" {
   // The secret is created when we deploy the service. The name must be
   // the same with whatever we have in
   // https://github.com/canonical/cd-identity-core-infrastructure/blob/main/modules/hook_service/main.tf
-  name  = "hook_salesforce_service_credentials"
+  name  = "hook_service_salesforce_credentials"
   model = var.model
 }
 
