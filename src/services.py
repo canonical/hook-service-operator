@@ -85,15 +85,23 @@ class PebbleService:
 
     def __init__(self, unit: Unit) -> None:
         self._unit = unit
-        self._container = unit.get_container(WORKLOAD_SERVICE)
+        self._container = unit.get_container(WORKLOAD_CONTAINER)
         self._layer_dict: LayerDict = PEBBLE_LAYER_DICT
+
+    def _restart_service(self, restart: bool = False) -> None:
+        if restart:
+            self._container.restart(WORKLOAD_SERVICE)
+        elif not self._container.get_service(WORKLOAD_SERVICE).is_running():
+            self._container.start(WORKLOAD_SERVICE)
+        else:
+            self._container.replan()
 
     def plan(self, layer: Layer) -> None:
         """Plan the pebble service."""
-        self._container.add_layer(WORKLOAD_CONTAINER, layer, combine=True)
+        self._container.add_layer(WORKLOAD_SERVICE, layer, combine=True)
 
         try:
-            self._container.restart(WORKLOAD_CONTAINER)
+            self._restart_service()
         except Exception as e:
             raise PebbleError(f"Pebble failed to restart the workload service. Error: {e}")
 
