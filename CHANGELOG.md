@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/canonical/hook-service-operator/compare/v1.0.1...v1.0.2) (2025-07-11)
+
+
+### Bug Fixes
+
+* don't restart service if config didn't change ([f58c8c4](https://github.com/canonical/hook-service-operator/commit/f58c8c4991137d384b0dc495cca19f28c4f18719))
+
 ## [1.0.1](https://github.com/canonical/hook-service-operator/compare/v1.0.0...v1.0.1) (2025-06-30)
 
 
