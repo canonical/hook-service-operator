@@ -6,6 +6,7 @@
 # Charm constants
 WORKLOAD_CONTAINER = "hook-service"
 WORKLOAD_SERVICE = "hook-service"
+PEBBLE_READY_CHECK_NAME = "ready"
 API_TOKEN_SECRET_KEY = "api-token"
 API_TOKEN_SECRET_LABEL = "apitokensecret"
 CONFIG_CONSUMER_KEY_SECRET_KEY = "consumer-key"

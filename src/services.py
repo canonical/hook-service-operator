@@ -12,6 +12,7 @@ from ops.pebble import CheckStatus, Layer, LayerDict, ServiceInfo
 
 from cli import CommandLine
 from constants import (
+    PEBBLE_READY_CHECK_NAME,
     PORT,
     SERVICE_COMMAND,
     WORKLOAD_CONTAINER,
@@ -34,7 +35,7 @@ PEBBLE_LAYER_DICT = {
         }
     },
     "checks": {
-        "ready": {
+        PEBBLE_READY_CHECK_NAME: {
             "override": "replace",
             "http": {"url": f"http://localhost:{PORT}/api/v0/status"},
         },
@@ -72,7 +73,6 @@ class WorkloadService:
         except Exception as e:
             logger.error("Failed to set workload version: %s", e)
 
-    @property
     def is_running(self) -> bool:
         """Checks whether the service is running."""
         if not (service := self.get_service()):

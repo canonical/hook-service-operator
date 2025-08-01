@@ -28,6 +28,7 @@ from constants import (
     GRAFANA_DASHBOARD_INTEGRATION_NAME,
     INGRESS_INTEGRATION_NAME,
     LOGGING_INTEGRATION_NAME,
+    PEBBLE_READY_CHECK_NAME,
     PORT,
     PROMETHEUS_SCRAPE_INTEGRATION_NAME,
     TEMPO_TRACING_INTEGRATION_NAME,
@@ -180,15 +181,15 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.unit.status = ops.BlockedStatus(event.message)
 
     def _on_pebble_check_failed(self, event: ops.PebbleCheckFailedEvent) -> None:
-        if event.info.name == "ready":
+        if event.info.name == PEBBLE_READY_CHECK_NAME:
             logger.warning("The service is not running")
             self.unit.status = ops.BlockedStatus(
                 f"Service is down, please check the {WORKLOAD_CONTAINER} container logs"
             )
 
     def _on_pebble_check_recovered(self, event: ops.PebbleCheckRecoveredEvent) -> None:
-        if event.info.name == "ready":
-            logger.warning("The service is online again")
+        if event.info.name == PEBBLE_READY_CHECK_NAME:
+            logger.info("The service is online again")
             self.unit.status = ops.ActiveStatus()
 
     def _holistic_handler(self, event: ops.EventBase) -> None:
@@ -221,7 +222,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
     def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:
         if not container_connectivity(self):
             event.add_status(ops.WaitingStatus("Container is not connected yet"))
-        elif not self._workload_service.is_running:
+        elif not self._workload_service.is_running():
             event.add_status(
                 ops.BlockedStatus(
                     f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs"
