@@ -91,6 +91,12 @@ class HookServiceOperatorCharm(ops.CharmBase):
         )
 
         self.framework.observe(self.on.hook_service_pebble_ready, self._on_pebble_ready)
+        self.framework.observe(
+            self.on.hook_service_pebble_check_failed, self._on_pebble_check_failed
+        )
+        self.framework.observe(
+            self.on.hook_service_pebble_check_recovered, self._on_pebble_check_recovered
+        )
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.leader_elected, self._on_leader_elected)
         self.framework.observe(self.on.leader_settings_changed, self._on_leader_settings_changed)
@@ -173,6 +179,18 @@ class HookServiceOperatorCharm(ops.CharmBase):
         logger.error(f"Failed to patch resource constraints: {event.message}")
         self.unit.status = ops.BlockedStatus(event.message)
 
+    def _on_pebble_check_failed(self, event: ops.PebbleCheckFailedEvent) -> None:
+        if event.info.name == "ready":
+            logger.warning("The service is not running")
+            self.unit.status = ops.BlockedStatus(
+                f"Service is down, please check the {WORKLOAD_CONTAINER} container logs"
+            )
+
+    def _on_pebble_check_recovered(self, event: ops.PebbleCheckRecoveredEvent) -> None:
+        if event.info.name == "ready":
+            logger.warning("The service is online again")
+            self.unit.status = ops.ActiveStatus()
+
     def _holistic_handler(self, event: ops.EventBase) -> None:
         if not all(condition(self) for condition in NOOP_CONDITIONS):
             return
@@ -203,6 +221,12 @@ class HookServiceOperatorCharm(ops.CharmBase):
     def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:
         if not container_connectivity(self):
             event.add_status(ops.WaitingStatus("Container is not connected yet"))
+        elif not self._workload_service.is_running:
+            event.add_status(
+                ops.BlockedStatus(
+                    f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs"
+                )
+            )
 
         if configs := self._config.get_missing_config_keys():
             event.add_status(ops.BlockedStatus(f"Missing required configuration: {configs}"))

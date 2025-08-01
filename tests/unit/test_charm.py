@@ -16,6 +16,7 @@ class TestPebbleReadyEvent:
         mocked_open_port: MagicMock,
         mocked_charm_holistic_handler: MagicMock,
         mocked_workload_service_version: MagicMock,
+        mocked_is_running: MagicMock,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
     ) -> None:
@@ -51,6 +52,7 @@ class TestConfigChangedEvent:
     def test_when_event_emitted(
         self,
         mocked_charm_holistic_handler: MagicMock,
+        mocked_is_running: MagicMock,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
     ) -> None:
@@ -71,6 +73,7 @@ class TestConfigChangedEvent:
 class TestIngressReadyEvent:
     def test_when_event_emitted(
         self,
+        mocked_is_running: MagicMock,
         ingress_integration: testing.Relation,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
@@ -92,6 +95,7 @@ class TestIngressReadyEvent:
 class TestIngressRevokedEvent:
     def test_when_event_emitted(
         self,
+        mocked_is_running: MagicMock,
         ingress_integration: testing.Relation,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
@@ -127,6 +131,7 @@ class TestHolisticHandler:
 
     def test_when_all_conditions_satisfied(
         self,
+        mocked_is_running: MagicMock,
         ingress_integration: testing.Relation,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
