@@ -5,9 +5,10 @@
 
 import logging
 from collections import ChainMap
+from typing import Optional
 
 from ops import Container, ModelError, Unit
-from ops.pebble import Layer, LayerDict
+from ops.pebble import CheckStatus, Layer, LayerDict, ServiceInfo
 
 from cli import CommandLine
 from constants import (
@@ -58,6 +59,12 @@ class WorkloadService:
             self._version = self._cli.get_service_version() or ""
         return self._version
 
+    def get_service(self) -> Optional[ServiceInfo]:
+        try:
+            return self._container.get_service(WORKLOAD_SERVICE)
+        except (ModelError, ConnectionError) as e:
+            logger.error("Failed to get pebble service: %s", e)
+
     def set_version(self) -> None:
         """Set the service version."""
         try:
@@ -68,12 +75,14 @@ class WorkloadService:
     @property
     def is_running(self) -> bool:
         """Checks whether the service is running."""
-        try:
-            workload_service = self._container.get_service(WORKLOAD_CONTAINER)
-        except ModelError:
+        if not (service := self.get_service()):
             return False
 
-        return workload_service.is_running()
+        if not service.is_running():
+            return False
+
+        c = self._container.get_checks().get("ready")
+        return c.status == CheckStatus.UP
 
     def open_port(self) -> None:
         """Open the service ports."""

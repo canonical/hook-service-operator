@@ -43,6 +43,11 @@ def mocked_charm_holistic_handler(mocker: MockerFixture) -> MagicMock:
 
 
 @pytest.fixture
+def mocked_is_running(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.WorkloadService.is_running", return_value=True)
+
+
+@pytest.fixture
 def mocked_open_port(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("charm.WorkloadService.open_port")
 
@@ -140,3 +145,4 @@ def all_satisfied_conditions(mocker: MockerFixture) -> None:
     mocker.patch("charm.container_connectivity", return_value=True)
     mocker.patch("charm.Secrets.is_ready", return_value=True)
     mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
+    mocker.patch("charm.WorkloadService.is_running", return_value=True)
