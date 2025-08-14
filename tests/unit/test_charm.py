@@ -8,6 +8,7 @@ import pytest
 from ops import StatusBase, testing
 
 from charm import HookServiceOperatorCharm
+from constants import WORKLOAD_CONTAINER
 
 
 class TestPebbleReadyEvent:
@@ -189,6 +190,11 @@ class TestCollectStatusEvent:
         "condition, status, message",
         [
             ("container_connectivity", testing.WaitingStatus, "Container is not connected yet"),
+            (
+                "WorkloadService.is_running",
+                testing.BlockedStatus,
+                f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs",
+            ),
         ],
     )
     def test_when_a_condition_failed(
