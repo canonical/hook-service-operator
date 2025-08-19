@@ -183,14 +183,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
     def _on_pebble_check_failed(self, event: ops.PebbleCheckFailedEvent) -> None:
         if event.info.name == PEBBLE_READY_CHECK_NAME:
             logger.warning("The service is not running")
-            self.unit.status = ops.BlockedStatus(
-                f"Service is down, please check the {WORKLOAD_CONTAINER} container logs"
-            )
 
     def _on_pebble_check_recovered(self, event: ops.PebbleCheckRecoveredEvent) -> None:
         if event.info.name == PEBBLE_READY_CHECK_NAME:
             logger.info("The service is online again")
-            self.unit.status = ops.ActiveStatus()
 
     def _holistic_handler(self, event: ops.EventBase) -> None:
         if not all(condition(self) for condition in NOOP_CONDITIONS):
@@ -220,20 +216,21 @@ class HookServiceOperatorCharm(ops.CharmBase):
             raise
 
     def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:
-        if not container_connectivity(self):
+        if not (can_connect := container_connectivity(self)):
             event.add_status(ops.WaitingStatus("Container is not connected yet"))
-        elif not self._workload_service.is_running():
-            event.add_status(
-                ops.BlockedStatus(
-                    f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs"
-                )
-            )
 
         if configs := self._config.get_missing_config_keys():
             event.add_status(ops.BlockedStatus(f"Missing required configuration: {configs}"))
 
         if not self._secrets.is_ready():
             event.add_status(ops.WaitingStatus("Waiting for secrets creation"))
+
+        if can_connect and not self._workload_service.is_running():
+            event.add_status(
+                ops.BlockedStatus(
+                    f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs"
+                )
+            )
 
         event.add_status(ops.ActiveStatus())
 
