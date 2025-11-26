@@ -15,6 +15,7 @@ output = ".cover/coverage.xml"
 [tool.pytest.ini_options]
 minversion = "6.0"
 log_cli_level = "INFO"
+pythonpath = ["src", "lib", "tests"]
 
 # Linting and formatting tools configuration
 [tool.codespell]
@@ -78,6 +79,7 @@ convention = "google"
 
 [tool.mypy]
 pretty = true
+plugins = ["pydantic.mypy"]
 mypy_path = "./src:./lib/:./tests"
 exclude = 'lib/charms/((?!hook_service/).)'
 follow_imports = "silent"
@@ -91,8 +93,11 @@ check_untyped_defs = true
 allow_redefinition = true
 disallow_incomplete_defs = true
 disallow_untyped_defs = true
+ignore_missing_imports = true
 
 # Ignore libraries that do not have type hint nor stubs
 [[tool.mypy.overrides]]
 module = ["ops.*", "pytest.*", "pytest_operator.*", "urllib3.*", "jinja2.*", "lightkube.*", "pytest_mock.*"]
-ignore_missing_imports = true
+
+[tool.pyright]
+extraPaths = ["lib"]
