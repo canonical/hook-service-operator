@@ -4,6 +4,9 @@
 """Constants."""
 
 # Charm constants
+from string import Template
+
+POSTGRESQL_DSN_TEMPLATE = Template("postgres://$username:$password@$endpoint/$database")
 WORKLOAD_CONTAINER = "hook-service"
 WORKLOAD_SERVICE = "hook-service"
 PEBBLE_READY_CHECK_NAME = "ready"
@@ -24,3 +27,4 @@ GRAFANA_DASHBOARD_INTEGRATION_NAME = "grafana-dashboard"
 TEMPO_TRACING_INTEGRATION_NAME = "tracing"
 PROMETHEUS_SCRAPE_INTEGRATION_NAME = "metrics-endpoint"
 HYDRA_TOKEN_HOOK_INTEGRATION_NAME = "hydra-token-hook"
+DATABASE_INTEGRATION_NAME = "pg-database"

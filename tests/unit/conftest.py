@@ -6,23 +6,25 @@ from unittest.mock import MagicMock, PropertyMock, create_autospec
 
 import pytest
 from ops import CollectStatusEvent, EventBase, testing
-from ops.model import Container, Unit
+from ops.model import ActiveStatus, Container, Unit
 from ops.testing import Model
 from pytest_mock import MockerFixture
 
 
 @pytest.fixture(autouse=True)
 def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
-    mocker.patch(
+    mock_patcher_cls = mocker.patch(
         "charms.observability_libs.v0.kubernetes_compute_resources_patch.ResourcePatcher",
         autospec=True,
     )
-    mocker.patch.multiple(
-        "charm.KubernetesComputeResourcesPatch",
-        _namespace="model",
-        _patch=lambda *a, **kw: True,
-        is_ready=lambda *a, **kw: True,
-    )
+    mock_patcher_instance = mock_patcher_cls.return_value
+    mock_patcher_instance.is_failed.return_value = (False, "")
+    mock_patcher_instance.is_ready.return_value = True
+
+    mocker.patch("charm.KubernetesComputeResourcesPatch.is_ready", return_value=True)
+    mocker.patch("charm.KubernetesComputeResourcesPatch.get_status", return_value=ActiveStatus())
+    mocker.patch("charm.KubernetesComputeResourcesPatch._patch", return_value=True)
+    mocker.patch("charm.KubernetesComputeResourcesPatch._namespace", return_value="model")
 
 
 @pytest.fixture
@@ -106,7 +108,7 @@ def api_token_secret(api_token: str) -> testing.Secret:
 
 
 @pytest.fixture()
-def salesforce_consumer_secret(salesforce_consumer_info: str) -> testing.Secret:
+def salesforce_consumer_secret(salesforce_consumer_info: Dict[str, str]) -> testing.Secret:
     return testing.Secret(
         tracked_content=salesforce_consumer_info,
     )
@@ -146,3 +148,32 @@ def all_satisfied_conditions(mocker: MockerFixture) -> None:
     mocker.patch("charm.Secrets.is_ready", return_value=True)
     mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
     mocker.patch("charm.WorkloadService.is_running", return_value=True)
+
+
+@pytest.fixture
+def mocked_cli(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.CommandLine")
+
+
+@pytest.fixture
+def mocked_database_config(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.DatabaseConfig")
+
+
+@pytest.fixture
+def database_relation_data() -> dict:
+    return {
+        "endpoints": "postgres-k8s-primary.namespace.svc.cluster.local:5432",
+        "username": "username",
+        "password": "password",
+    }
+
+
+@pytest.fixture
+def database_relation(database_relation_data: dict) -> testing.Relation:
+    return testing.Relation(
+        endpoint="pg-database",
+        interface="postgresql_client",
+        remote_app_name="postgres-k8s",
+        remote_app_data=database_relation_data,
+    )

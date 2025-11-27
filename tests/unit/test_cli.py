@@ -19,21 +19,22 @@ class TestCommandLine:
         with patch.object(
             command_line,
             "_run_cmd",
-            return_value=f"App Version: {expected}",
+            return_value=(f"App Version: {expected}", ""),
         ) as run_cmd:
             actual = command_line.get_service_version()
             assert actual == expected
             run_cmd.assert_called_with(["hook-service", "version"])
 
     def test_run_cmd(self, mocked_container: MagicMock, command_line: CommandLine) -> None:
-        cmd, expected = ["cmd"], "stdout"
+        cmd, expected_stdout, expected_stderr = ["cmd"], "stdout", "stderr"
 
-        mocked_process = MagicMock(wait_output=MagicMock(return_value=(expected, "")))
+        mocked_process = MagicMock(wait_output=MagicMock(return_value=(expected_stdout, expected_stderr)))
         mocked_container.exec.return_value = mocked_process
 
-        actual = command_line._run_cmd(cmd)
+        actual_stdout, actual_stderr = command_line._run_cmd(cmd)
 
-        assert actual == expected
+        assert actual_stdout == expected_stdout
+        assert actual_stderr == expected_stderr
         mocked_container.exec.assert_called_once_with(
             cmd, service_context=None, timeout=20, environment={}, stdin=None
         )
