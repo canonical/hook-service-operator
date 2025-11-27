@@ -85,6 +85,10 @@ requires:
     limit: 1
     optional: true
     description: Ingress used to expose the service to the public internet
+  pg-database:
+    interface: postgresql_client
+    optional: false
+    limit: 1
 
 provides:
   metrics-endpoint:

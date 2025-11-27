@@ -8,7 +8,9 @@ import logging
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.hydra.v0.hydra_token_hook import (
+    AuthIn,
     HydraHookProvider,
     ProviderData,
 )
@@ -17,7 +19,7 @@ from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from jinja2 import Template
 from pydantic import AnyHttpUrl
 
-from constants import HYDRA_TOKEN_HOOK_INTEGRATION_NAME, PORT
+from constants import HYDRA_TOKEN_HOOK_INTEGRATION_NAME, PORT, POSTGRESQL_DSN_TEMPLATE
 from env_vars import EnvVars
 
 logger = logging.getLogger(__name__)
@@ -95,7 +97,7 @@ class HydraHookIntegration:
 
     def is_ready(self) -> bool:
         rel = self._provider._charm.model.get_relation(HYDRA_TOKEN_HOOK_INTEGRATION_NAME)
-        return rel and rel.active
+        return bool(rel and rel.active)
 
     def update_relation_data(self, hook_url: str, api_token: str) -> None:
         self._provider.update_relations_app_data(
@@ -103,6 +105,47 @@ class HydraHookIntegration:
                 url=hook_url,
                 auth_config_name="Authorization",
                 auth_config_value=api_token,
-                auth_config_in_="header",
+                auth_config_in=AuthIn.header,
             )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DatabaseConfig:
+    """The data source from the database integration."""
+
+    endpoint: str = ""
+    database: str = ""
+    username: str = ""
+    password: str = ""
+    migration_version: str = ""
+
+    @property
+    def dsn(self) -> str:
+        return POSTGRESQL_DSN_TEMPLATE.substitute(
+            username=self.username,
+            password=self.password,
+            endpoint=self.endpoint,
+            database=self.database,
+        )
+
+    def to_env_vars(self) -> EnvVars:
+        return {
+            "DSN": self.dsn,
+        }
+
+    @classmethod
+    def load(cls, requirer: DatabaseRequires) -> "DatabaseConfig":
+        if not (database_integrations := requirer.relations):
+            return cls()
+
+        integration_id = database_integrations[0].id
+        integration_data: dict[str, str] = requirer.fetch_relation_data()[integration_id]
+
+        return cls(
+            endpoint=integration_data.get("endpoints", "").split(",")[0],
+            database=requirer.database,
+            username=integration_data.get("username", ""),
+            password=integration_data.get("password", ""),
+            migration_version=f"migration_version_{integration_id}",
         )
