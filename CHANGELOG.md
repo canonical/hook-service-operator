@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/canonical/hook-service-operator/compare/v1.0.2...v1.0.3) (2025-12-02)
+
+
+### Bug Fixes
+
+* upgrade to use juju tf 1.0 ([9c5a50c](https://github.com/canonical/hook-service-operator/commit/9c5a50c08c90ff0fb299a96f999d11e6fde61b71))
+
 ## [1.0.2](https://github.com/canonical/hook-service-operator/compare/v1.0.1...v1.0.2) (2025-11-12)
 
 
