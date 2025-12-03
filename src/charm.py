@@ -5,7 +5,7 @@
 """A Juju charm for Identity Platform Hook Service."""
 
 import logging
-from functools import cached_property
+from os.path import join
 from secrets import token_hex
 
 import ops
@@ -34,7 +34,7 @@ from constants import (
     API_TOKEN_SECRET_LABEL,
     DATABASE_INTEGRATION_NAME,
     GRAFANA_DASHBOARD_INTEGRATION_NAME,
-    INGRESS_INTEGRATION_NAME,
+    INTERNAL_ROUTE_INTEGRATION_NAME,
     LOGGING_INTEGRATION_NAME,
     PEBBLE_READY_CHECK_NAME,
     PORT,
@@ -43,7 +43,7 @@ from constants import (
     WORKLOAD_CONTAINER,
 )
 from exceptions import MigrationCheckError, MigrationError, PebbleError
-from integrations import DatabaseConfig, HydraHookIntegration, IngressData, TracingData
+from integrations import DatabaseConfig, HydraHookIntegration, InternalIngressData, TracingData
 from secret import Secrets
 from services import PebbleService, WorkloadService
 from utils import (
@@ -79,10 +79,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
             database_name=f"{self.model.name}_{self.app.name}",
         )
 
-        self.ingress = TraefikRouteRequirer(
+        self.internal_ingress = TraefikRouteRequirer(
             self,
-            self.model.get_relation(INGRESS_INTEGRATION_NAME),  # type: ignore
-            INGRESS_INTEGRATION_NAME,
+            self.model.get_relation(INTERNAL_ROUTE_INTEGRATION_NAME),  # type: ignore
+            INTERNAL_ROUTE_INTEGRATION_NAME,
             raw=True,
         )
 
@@ -153,10 +153,18 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._on_database_integration_broken,
         )
 
-        # ingress
+        # internal route
         self.framework.observe(
-            self.ingress.on.ready,
-            self._on_ingress_changed,
+            self.on[INTERNAL_ROUTE_INTEGRATION_NAME].relation_joined,
+            self._on_internal_route_changed,
+        )
+        self.framework.observe(
+            self.on[INTERNAL_ROUTE_INTEGRATION_NAME].relation_changed,
+            self._on_internal_route_changed,
+        )
+        self.framework.observe(
+            self.on[INTERNAL_ROUTE_INTEGRATION_NAME].relation_broken,
+            self._on_internal_route_changed,
         )
 
     @property
@@ -169,6 +177,8 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
     @property
     def _hydra_hook_url(self) -> str:
+        if internal_url := InternalIngressData.load(self.internal_ingress).url:
+            return join(str(internal_url), "api/v0/hook/hydra")
         return (
             f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{PORT}/api/v0/hook/hydra"
         )
@@ -186,12 +196,20 @@ class HookServiceOperatorCharm(ops.CharmBase):
     def _prepare_secrets(self) -> None:
         self._secrets[API_TOKEN_SECRET_LABEL] = {API_TOKEN_SECRET_KEY: token_hex(16)}
 
-    @leader_unit
-    def _on_ingress_changed(self, event: ops.RelationEvent) -> None:
-        if self.ingress.is_ready():
-            ingress_config = IngressData.load(self.ingress).config
-            self.ingress.submit_to_traefik(ingress_config)
+    def _on_internal_route_changed(self, event: ops.RelationEvent) -> None:
+        # needed due to how traefik_route lib is handling the event
+        self.internal_ingress._relation = event.relation
         self._holistic_handler(event)
+
+    @leader_unit
+    def _prepare_internal_ingress(self) -> None:
+        if not self.internal_ingress.is_ready():
+            return
+        if self.internal_ingress._relation.app is None:
+            return
+
+        internal_route_config = InternalIngressData.load(self.internal_ingress).config
+        self.internal_ingress.submit_to_traefik(internal_route_config)
 
     def _on_hydra_hook_ready(self, event: ops.RelationEvent) -> None:
         self._holistic_handler(event)
@@ -217,6 +235,21 @@ class HookServiceOperatorCharm(ops.CharmBase):
     def _on_database_integration_broken(self, event: ops.RelationBrokenEvent) -> None:
         self._holistic_handler(event)
 
+    def _prepare_database(self) -> bool:
+        if not self.unit.is_leader():
+            logger.info(
+                "Unit does not have leadership. Wait for leader unit to run the migration."
+            )
+            return False
+
+        database_config = DatabaseConfig.load(self.database_requirer)
+        try:
+            self._cli.migrate_up(dsn=database_config.dsn)
+        except MigrationError:
+            logger.error("Auto migration job failed. Please use the run-migration-up action")
+            return False
+        return True
+
     def _on_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
         self._workload_service.open_port()
         self._holistic_handler(event)
@@ -239,9 +272,13 @@ class HookServiceOperatorCharm(ops.CharmBase):
         if not all(condition(self) for condition in NOOP_CONDITIONS):
             return
 
+        # Use a flag to track readiness instead of early returns to ensure all necessary
+        # operations are attempted, such as updating relation data.
+        ready = True
+
         if not self._secrets.is_ready():
             if not self.unit.is_leader():
-                return
+                ready = False
             self._prepare_secrets()
 
         if self.hydra_token_hook_integration.is_ready():
@@ -250,21 +287,12 @@ class HookServiceOperatorCharm(ops.CharmBase):
                 self._secrets.api_token,
             )
 
-        try:
-            if self.migration_needed:
-                if not self.unit.is_leader():
-                    logger.info(
-                        "Unit does not have leadership. Wait for leader unit to run the migration."
-                    )
-                    return
+        self._prepare_internal_ingress()
 
-                database_config = DatabaseConfig.load(self.database_requirer)
-                try:
-                    self._cli.migrate_up(dsn=database_config.dsn)
-                except MigrationError:
-                    logger.error("Auto migration job failed. Please use the run-migration-up action")
-                    return
-        except MigrationCheckError:
+        if not migration_is_ready(self):
+            ready = self._prepare_database() and ready
+
+        if not ready:
             return
 
         try:
@@ -285,7 +313,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
         if not self._secrets.is_ready():
             event.add_status(ops.WaitingStatus("Waiting for secrets creation"))
 
-        if can_connect and not self._workload_service.is_running():
+        if can_connect and self._workload_service.is_failing():
             event.add_status(
                 ops.BlockedStatus(
                     f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs"

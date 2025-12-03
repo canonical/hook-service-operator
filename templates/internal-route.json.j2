@@ -1,0 +1,91 @@
+{% set identifier = "{}-{}".format(model, app) %}
+{% set svc = "http://{}.{}.svc.cluster.local:{}".format(app, model, port) %}
+
+{
+  "http": {
+    "middlewares": {
+      "juju-sidecar-noprefix-{{ identifier }}": {
+        "stripPrefix": {
+          "forceSlash": false,
+          "prefixes": ["/{{ identifier }}"]
+        }
+      }
+    },
+    "routers": {
+      "juju-{{ identifier }}-authz-api-router": {
+        "entryPoints": ["web"],
+        "rule": "PathPrefix(`/{{ identifier }}/api/v0/authz`)",
+        "middlewares": ["juju-sidecar-noprefix-{{ identifier }}"],
+        "service": "juju-{{ identifier }}-api-service"
+      },
+      "juju-{{ identifier }}-authz-api-router-tls": {
+        "entryPoints": ["websecure"],
+        "rule": "PathPrefix(`/{{ identifier }}/api/v0/authz`)",
+        "middlewares": ["juju-sidecar-noprefix-{{ identifier }}"],
+        "service": "juju-{{ identifier }}-api-service",
+        "tls": {
+          "domains": [
+            {
+              "main": "{{ external_host }}",
+              "sans": ["*.{{ external_host }}"]
+
+            }
+          ]
+        }
+      },
+      "juju-{{ identifier }}-status-api-router": {
+        "entryPoints": ["web"],
+        "rule": "PathPrefix(`/{{ identifier }}/api/v0/status`)",
+        "middlewares": ["juju-sidecar-noprefix-{{ identifier }}"],
+        "service": "juju-{{ identifier }}-api-service"
+      },
+      "juju-{{ identifier }}-status-api-router-tls": {
+        "entryPoints": ["websecure"],
+        "rule": "PathPrefix(`/{{ identifier }}/api/v0/status`)",
+        "middlewares": ["juju-sidecar-noprefix-{{ identifier }}"],
+        "service": "juju-{{ identifier }}-api-service",
+        "tls": {
+          "domains": [
+            {
+              "main": "{{ external_host }}",
+              "sans": ["*.{{ external_host }}"]
+
+            }
+          ]
+        }
+      },
+      "juju-{{ identifier }}-hook-api-router": {
+        "entryPoints": ["web"],
+        "rule": "PathPrefix(`/{{ identifier }}/api/v0/hook/hydra`)",
+        "middlewares": ["juju-sidecar-noprefix-{{ identifier }}"],
+        "service": "juju-{{ identifier }}-api-service"
+      },
+      "juju-{{ identifier }}-hook-api-router-tls": {
+        "entryPoints": ["websecure"],
+        "rule": "PathPrefix(`/{{ identifier }}/api/v0/hook/hydra`)",
+        "middlewares": ["juju-sidecar-noprefix-{{ identifier }}"],
+        "service": "juju-{{ identifier }}-api-service",
+        "tls": {
+          "domains": [
+            {
+              "main": "{{ external_host }}",
+              "sans": ["*.{{ external_host }}"]
+
+            }
+          ]
+        }
+      }
+    },
+    "services": {
+      "juju-{{ identifier }}-api-service": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "{{ svc }}"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

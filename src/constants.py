@@ -20,7 +20,7 @@ SERVICE_COMMAND = "hook-service serve"
 PORT = 8080
 
 # Integration constants
-INGRESS_INTEGRATION_NAME = "ingress"
+INTERNAL_ROUTE_INTEGRATION_NAME = "internal-route"
 PROMETHEUS_SCRAPE_INTEGRATION_NAME = "metrics-endpoint"
 LOGGING_INTEGRATION_NAME = "logging"
 GRAFANA_DASHBOARD_INTEGRATION_NAME = "grafana-dashboard"

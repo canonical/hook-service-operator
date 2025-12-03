@@ -8,15 +8,16 @@ from pathlib import Path
 
 import httpx
 import pytest
-from pytest_operator.plugin import OpsTest
-
-from tests.integration.conftest import (
+from integration.conftest import (
     APP_NAME,
+    DB_APP,
+    DB_CHARM,
     INGRESS_DOMAIN,
     METADATA,
     TRAEFIK_APP,
     TRAEFIK_CHARM,
 )
+from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,9 @@ async def get_unit_address(ops_test: OpsTest, app_name: str, unit_num: int) -> s
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest, local_charm: Path, charm_config: dict) -> None:
+async def test_build_and_deploy(
+    ops_test: OpsTest, local_charm: Path | str, charm_config: dict
+) -> None:
     """Build the charm-under-test and deploy it together with related charms.
 
     Assert on the unit status before any relations/configurations take place.
@@ -48,13 +51,20 @@ async def test_build_and_deploy(ops_test: OpsTest, local_charm: Path, charm_conf
         config={"external_hostname": INGRESS_DOMAIN},
         trust=True,
     )
+    await ops_test.model.deploy(
+        DB_CHARM,
+        DB_APP,
+        channel="14/stable",
+        trust=True,
+    )
 
     await ops_test.model.integrate(TRAEFIK_APP, APP_NAME)
+    await ops_test.model.integrate(DB_APP, APP_NAME)
 
     # Deploy the charm and wait for active/idle status
     await asyncio.gather(
         ops_test.model.wait_for_idle(
-            apps=[TRAEFIK_APP],
+            apps=[TRAEFIK_APP, DB_APP],
             raise_on_error=False,
             raise_on_blocked=False,
             status="active",
@@ -70,3 +80,28 @@ async def test_app_health(ops_test: OpsTest, http_client: httpx.AsyncClient) -> 
     resp = await http_client.get(f"http://{public_address}:8080/api/v0/status")
 
     resp.raise_for_status()
+
+
+async def test_ingress_route(
+    ops_test: OpsTest,
+    leader_ingress_integration_data: dict,
+    http_client: httpx.AsyncClient,
+) -> None:
+    url = leader_ingress_integration_data["url"]
+
+    resp = await http_client.get(str(Path(url + "/api/v0/status")))
+
+    resp.raise_for_status()
+
+
+async def test_groups_api(
+    ops_test: OpsTest,
+    leader_ingress_integration_data: dict,
+    http_client: httpx.AsyncClient,
+) -> None:
+    url = leader_ingress_integration_data["url"]
+
+    resp = await http_client.get(str(Path(url + "/api/v0/authz/groups")))
+
+    resp.raise_for_status()
+    assert resp.json() == []

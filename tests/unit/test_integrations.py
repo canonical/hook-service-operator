@@ -7,19 +7,29 @@ import pytest
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from pydantic import AnyHttpUrl
+from scenario import Relation
 
-from constants import PORT
-from integrations import DatabaseConfig, IngressData
+from constants import INTERNAL_ROUTE_INTEGRATION_NAME, PORT
+from integrations import DatabaseConfig, InternalIngressData
 
 
-class TestIngressData:
+class TestInternalIngressData:
     @pytest.fixture
-    def mocked_requirer(self) -> MagicMock:
+    def mocked_relation(self) -> MagicMock:
+        mocked = MagicMock(spec=Relation)
+        mocked.app = "app"
+        mocked.data = {"app": {"external_host": "external.hook-service.com", "scheme": "http"}}
+        return mocked
+
+    @pytest.fixture
+    def mocked_requirer(self, mocked_relation: MagicMock) -> MagicMock:
         mocked = create_autospec(TraefikRouteRequirer)
         mocked._charm = MagicMock()
         mocked._charm.model.name = "model"
         mocked._charm.app.name = "app"
         mocked.scheme = "http"
+        mocked._charm.model.get_relation = MagicMock(return_value=mocked_relation)
+
         return mocked
 
     @pytest.fixture
@@ -34,10 +44,8 @@ class TestIngressData:
     def test_load_with_external_host(
         self, mocked_requirer: MagicMock, ingress_template: str
     ) -> None:
-        mocked_requirer.external_host = "external.hook-service.com"
-
         with patch("builtins.open", mock_open(read_data=ingress_template)):
-            actual = IngressData.load(mocked_requirer)
+            actual = InternalIngressData.load(mocked_requirer)
 
         expected_ingress_config = {
             "model": "model",
@@ -45,28 +53,22 @@ class TestIngressData:
             "port": PORT,
             "external_host": "external.hook-service.com",
         }
-        assert actual == IngressData(
-            endpoint=AnyHttpUrl("http://external.hook-service.com/model-app"),
+        assert actual == InternalIngressData(
+            url=AnyHttpUrl("http://external.hook-service.com/model-app"),
             config=expected_ingress_config,
         )
 
     def test_load_without_external_host(
-        self, mocked_requirer: MagicMock, ingress_template: str
+        self, mocked_requirer: MagicMock, mocked_relation: MagicMock, ingress_template: str
     ) -> None:
-        mocked_requirer.external_host = ""
+        mocked_relation.data = {"app": {"external_host": "", "scheme": "http"}}
 
         with patch("builtins.open", mock_open(read_data=ingress_template)):
-            actual = IngressData.load(mocked_requirer)
+            actual = InternalIngressData.load(mocked_requirer)
 
-        expected_ingress_config = {
-            "model": "model",
-            "app": "app",
-            "port": PORT,
-            "external_host": "",
-        }
-        assert actual == IngressData(
-            endpoint=AnyHttpUrl(f"http://app.model.svc.cluster.local:{PORT}"),
-            config=expected_ingress_config,
+        assert actual == InternalIngressData(
+            url=None,
+            config={},
         )
 
 
@@ -99,6 +101,4 @@ class TestDatabaseConfig:
 
     def test_to_env_vars(self, mocked_requirer: MagicMock) -> None:
         config = DatabaseConfig.load(mocked_requirer)
-        assert config.to_env_vars() == {
-            "DSN": "postgres://user:password@host:5432/test_db"
-        }
+        assert config.to_env_vars() == {"DSN": "postgres://user:password@host:5432/test_db"}
