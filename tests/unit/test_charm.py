@@ -107,7 +107,7 @@ class TestIngressReadyEvent:
     def test_when_event_emitted(
         self,
         mocked_is_running: MagicMock,
-        ingress_integration: testing.Relation,
+        internal_route_integration: testing.Relation,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
         database_relation: testing.Relation,
@@ -120,13 +120,13 @@ class TestIngressReadyEvent:
         )
         state_in = testing.State(
             containers={container},
-            relations=[ingress_integration, database_relation],
+            relations=[internal_route_integration, database_relation],
             config=charm_config,
             secrets=mocked_secrets,
             model=Model(name="my-model"),
         )
 
-        state_out = ctx.run(ctx.on.relation_joined(ingress_integration), state_in)
+        state_out = ctx.run(ctx.on.relation_joined(internal_route_integration), state_in)
 
         assert state_out.unit_status == testing.ActiveStatus()
 
@@ -135,7 +135,7 @@ class TestIngressRevokedEvent:
     def test_when_event_emitted(
         self,
         mocked_is_running: MagicMock,
-        ingress_integration: testing.Relation,
+        internal_route_integration: testing.Relation,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
         database_relation: testing.Relation,
@@ -148,13 +148,13 @@ class TestIngressRevokedEvent:
         )
         state_in = testing.State(
             containers={container},
-            relations=[ingress_integration, database_relation],
+            relations=[internal_route_integration, database_relation],
             config=charm_config,
             secrets=mocked_secrets,
             model=Model(name="my-model"),
         )
 
-        state_out = ctx.run(ctx.on.relation_broken(ingress_integration), state_in)
+        state_out = ctx.run(ctx.on.relation_broken(internal_route_integration), state_in)
 
         assert state_out.unit_status == testing.ActiveStatus()
 
@@ -177,7 +177,7 @@ class TestHolisticHandler:
     def test_when_all_conditions_satisfied(
         self,
         mocked_is_running: MagicMock,
-        ingress_integration: testing.Relation,
+        internal_route_integration: testing.Relation,
         mocked_secrets: List[testing.Secret],
         charm_config: dict,
         api_token: str,
@@ -193,7 +193,7 @@ class TestHolisticHandler:
         )
         state_in = testing.State(
             containers={container},
-            relations=[ingress_integration, database_relation],
+            relations=[internal_route_integration, database_relation],
             config=charm_config,
             leader=True,
             secrets=mocked_secrets,
@@ -206,7 +206,7 @@ class TestHolisticHandler:
 
         layer = state_out.get_container("hook-service").layers["hook-service"]
         assert state_out.unit_status == testing.ActiveStatus()
-        assert layer.services.get("hook-service").environment == { # type: ignore
+        assert layer.services.get("hook-service").environment == {  # type: ignore
             "HTTPS_PROXY": "http://proxy.internal:6666",
             "HTTP_PROXY": "http://proxy.internal:6666",
             "NO_PROXY": "http://proxy.internal:6666",
@@ -219,7 +219,9 @@ class TestHolisticHandler:
             "SALESFORCE_ENABLED": True,
             "SALESFORCE_DOMAIN": salesforce_domain,
             "SALESFORCE_CONSUMER_KEY": salesforce_consumer_secret.tracked_content["consumer-key"],
-            "SALESFORCE_CONSUMER_SECRET": salesforce_consumer_secret.tracked_content["consumer-secret"],
+            "SALESFORCE_CONSUMER_SECRET": salesforce_consumer_secret.tracked_content[
+                "consumer-secret"
+            ],
         }
 
     def test_migration_needed_not_leader(
@@ -344,11 +346,12 @@ class TestCollectStatusEvent:
         assert state_out.unit_status == testing.ActiveStatus()
 
     @pytest.mark.parametrize(
-        "condition, status, message",
+        "condition, condition_value, status, message",
         [
-            ("container_connectivity", testing.WaitingStatus, "Container is not connected yet"),
+            ("container_connectivity", False, testing.WaitingStatus, "Container is not connected yet"),
             (
-                "WorkloadService.is_running",
+                "WorkloadService.is_failing",
+                True,
                 testing.BlockedStatus,
                 f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs",
             ),
@@ -358,6 +361,7 @@ class TestCollectStatusEvent:
         self,
         all_satisfied_conditions: MagicMock,
         condition: str,
+        condition_value: bool,
         status: type[StatusBase],
         message: str,
     ) -> None:
@@ -365,7 +369,7 @@ class TestCollectStatusEvent:
         container = testing.Container("hook-service", can_connect=True)
         state_in = testing.State(containers={container})
 
-        with patch(f"charm.{condition}", return_value=False):
+        with patch(f"charm.{condition}", return_value=condition_value):
             state_out = ctx.run(ctx.on.collect_unit_status(), state_in)
 
         assert isinstance(state_out.unit_status, status)
@@ -394,9 +398,7 @@ class TestCollectStatusEvent:
         state_in = testing.State(containers={container})
 
         with patch("charm.database_resource_is_created", return_value=True):
-            with patch(
-                "charm.migration_is_ready", side_effect=MigrationCheckError("failed")
-            ):
+            with patch("charm.migration_is_ready", side_effect=MigrationCheckError("failed")):
                 state_out = ctx.run(ctx.on.collect_unit_status(), state_in)
 
         assert isinstance(state_out.unit_status, testing.BlockedStatus)
@@ -430,10 +432,7 @@ class TestCollectStatusEvent:
                 state_out = ctx.run(ctx.on.collect_unit_status(), state_in)
 
         assert isinstance(state_out.unit_status, testing.WaitingStatus)
-        assert (
-            state_out.unit_status.message
-            == "Waiting for leader unit to run the migration"
-        )
+        assert state_out.unit_status.message == "Waiting for leader unit to run the migration"
 
 
 class TestDatabaseEvents:

@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from dataclasses import asdict, dataclass, field
-from typing import BinaryIO, List, Optional, TextIO
+from typing import BinaryIO, Optional, TextIO
 
 from ops.model import Container
 from ops.pebble import Error, ExecError
@@ -153,10 +153,12 @@ class CommandLine:
 
     def _run_cmd(
         self,
-        cmd: List[str],
-        exec_config: CmdExecConfig = CmdExecConfig(),
+        cmd: list[str],
+        exec_config: Optional[CmdExecConfig] = None,
     ) -> tuple[str, str]:
-        logger.debug(f"Running command: {cmd}")
+        if exec_config is None:
+            exec_config = CmdExecConfig()
+        logger.debug("Running command: %s", cmd)
 
         process = self.container.exec(cmd, **asdict(exec_config))
         try:

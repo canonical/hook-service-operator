@@ -28,7 +28,9 @@ class TestCommandLine:
     def test_run_cmd(self, mocked_container: MagicMock, command_line: CommandLine) -> None:
         cmd, expected_stdout, expected_stderr = ["cmd"], "stdout", "stderr"
 
-        mocked_process = MagicMock(wait_output=MagicMock(return_value=(expected_stdout, expected_stderr)))
+        mocked_process = MagicMock(
+            wait_output=MagicMock(return_value=(expected_stdout, expected_stderr))
+        )
         mocked_container.exec.return_value = mocked_process
 
         actual_stdout, actual_stderr = command_line._run_cmd(cmd)

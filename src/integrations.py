@@ -6,6 +6,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
+from typing import Optional
 from urllib.parse import urlparse
 
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
@@ -19,27 +20,48 @@ from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from jinja2 import Template
 from pydantic import AnyHttpUrl
 
-from constants import HYDRA_TOKEN_HOOK_INTEGRATION_NAME, PORT, POSTGRESQL_DSN_TEMPLATE
+from constants import (
+    HYDRA_TOKEN_HOOK_INTEGRATION_NAME,
+    INTERNAL_ROUTE_INTEGRATION_NAME,
+    PORT,
+    POSTGRESQL_DSN_TEMPLATE,
+)
 from env_vars import EnvVars
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class IngressData:
+class InternalIngressData:
     """The data source from the internal-ingress integration."""
 
-    endpoint: AnyHttpUrl
+    url: Optional[AnyHttpUrl] = None
     config: dict = field(default_factory=dict)
 
     @classmethod
-    def load(cls, requirer: TraefikRouteRequirer) -> "IngressData":
-        """Load the ingress data."""
-        model, app = requirer._charm.model.name, requirer._charm.app.name
-        external_host = requirer.external_host
-        external_endpoint = f"{requirer.scheme}://{external_host}/{model}-{app}"
+    def _external_host(cls, requirer: TraefikRouteRequirer) -> Optional[str]:
+        if not (relation := requirer._charm.model.get_relation(INTERNAL_ROUTE_INTEGRATION_NAME)):
+            return
+        if not relation.app:
+            return
+        return relation.data[relation.app].get("external_host", "")
 
-        with open("templates/ingress.json.j2", "r") as file:
+    @classmethod
+    def _scheme(cls, requirer: TraefikRouteRequirer) -> Optional[str]:
+        if not (relation := requirer._charm.model.get_relation(INTERNAL_ROUTE_INTEGRATION_NAME)):
+            return
+        if not relation.app:
+            return
+        return relation.data[relation.app].get("scheme", "")
+
+    @classmethod
+    def load(cls, requirer: TraefikRouteRequirer) -> "InternalIngressData":
+        model, app = requirer._charm.model.name, requirer._charm.app.name
+        external_host = cls._external_host(requirer)
+        scheme = cls._scheme(requirer)
+
+        external_endpoint = f"{scheme}://{external_host}/{model}-{app}"
+        with open("templates/internal-route.json.j2", "r") as file:
             template = Template(file.read())
 
         ingress_config = json.loads(
@@ -51,16 +73,18 @@ class IngressData:
             )
         )
 
-        endpoint = AnyHttpUrl(
-            external_endpoint
-            if external_host
-            else f"http://{app}.{model}.svc.cluster.local:{PORT}"
-        )
+        if not external_host:
+            logger.error("External hostname is not set on the ingress provider")
+            return cls()
 
         return cls(
-            endpoint=endpoint,
+            url=AnyHttpUrl(external_endpoint),
             config=ingress_config,
         )
+
+    @property
+    def secured(self) -> bool:
+        return self.url is not None and self.url.scheme == "https"
 
 
 @dataclass(frozen=True)
@@ -118,7 +142,6 @@ class DatabaseConfig:
     database: str = ""
     username: str = ""
     password: str = ""
-    migration_version: str = ""
 
     @property
     def dsn(self) -> str:
@@ -147,5 +170,4 @@ class DatabaseConfig:
             database=requirer.database,
             username=integration_data.get("username", ""),
             password=integration_data.get("password", ""),
-            migration_version=f"migration_version_{integration_id}",
         )

@@ -72,7 +72,7 @@ def mocked_event() -> MagicMock:
 
 
 @pytest.fixture
-def ingress_integration_data() -> dict:
+def internal_route_integration_data() -> dict:
     return {
         "external_host": "some-host",
         "scheme": "http",
@@ -80,12 +80,12 @@ def ingress_integration_data() -> dict:
 
 
 @pytest.fixture
-def ingress_integration(ingress_integration_data: dict) -> testing.Relation:
+def internal_route_integration(internal_route_integration_data: dict) -> testing.Relation:
     return testing.Relation(
-        endpoint="ingress",
+        endpoint="internal-route",
         interface="traefik_route",
         remote_app_name="traefik",
-        remote_app_data=ingress_integration_data,
+        remote_app_data=internal_route_integration_data,
     )
 
 

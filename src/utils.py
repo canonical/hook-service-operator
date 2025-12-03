@@ -8,9 +8,10 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 from constants import (
-    INGRESS_INTEGRATION_NAME,
+    DATABASE_INTEGRATION_NAME,
     WORKLOAD_CONTAINER,
 )
+from exceptions import MigrationCheckError
 
 if TYPE_CHECKING:
     from charm import HookServiceOperatorCharm
@@ -43,6 +44,9 @@ def integration_existence(integration_name: str) -> Condition:
     return wrapped
 
 
+database_integration_exists = integration_existence(DATABASE_INTEGRATION_NAME)
+
+
 def container_connectivity(charm: "HookServiceOperatorCharm") -> bool:
     """Check if charm can connect to the workload container."""
     return charm.unit.get_container(WORKLOAD_CONTAINER).can_connect()
@@ -58,14 +62,16 @@ def database_resource_is_created(charm: "HookServiceOperatorCharm") -> bool:
 
 
 def migration_is_ready(charm: "HookServiceOperatorCharm") -> bool:
-    return not charm.migration_needed
-
-
-ingress_integration_exists = integration_existence(INGRESS_INTEGRATION_NAME)
+    try:
+        return not charm.migration_needed
+    except MigrationCheckError:
+        return False
 
 
 # Condition failure causes early return without doing anything
 NOOP_CONDITIONS: tuple[Condition, ...] = (
     container_connectivity,
+    database_integration_exists,
+    database_resource_is_created,
     config_readiness,
 )
