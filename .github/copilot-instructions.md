@@ -28,6 +28,8 @@ Data flows from **Sources** (Config, Relations, Secrets) -> **Orchestration** (`
 - **Development Environment**: Use `tox devenv` to create the development virtual environment.
 - **Unit Tests**: `tox -e unit`. Tests are in `tests/unit/`.
   - Mock `ops.model.Container` and external libraries.
+  - **Fixtures**: Use `pytest` fixtures in `tests/unit/conftest.py` to provide common test objects like `testing.Context`, `testing.State`, and `testing.Container`. This reduces boilerplate in individual test methods.
+    - Use `dataclasses.replace(default_state, ...)` to create modified states for specific test cases.
 - **Integration Tests**: `tox -e integration`. Tests are in `tests/integration/`.
   - Uses `pytest-operator`.
 - **Build**: `charmcraft pack`.

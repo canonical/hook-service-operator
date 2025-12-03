@@ -1,14 +1,16 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-from typing import Dict, List
+from typing import Callable
 from unittest.mock import MagicMock, PropertyMock, create_autospec
 
 import pytest
 from ops import CollectStatusEvent, EventBase, testing
 from ops.model import ActiveStatus, Container, Unit
-from ops.testing import Model
+from ops.testing import Exec, Model
 from pytest_mock import MockerFixture
+
+from charm import HookServiceOperatorCharm
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +97,7 @@ def api_token() -> str:
 
 
 @pytest.fixture()
-def salesforce_consumer_info() -> Dict[str, str]:
+def salesforce_consumer_info() -> dict[str, str]:
     return {"consumer-key": "key", "consumer-secret": "secret"}
 
 
@@ -108,7 +110,7 @@ def api_token_secret(api_token: str) -> testing.Secret:
 
 
 @pytest.fixture()
-def salesforce_consumer_secret(salesforce_consumer_info: Dict[str, str]) -> testing.Secret:
+def salesforce_consumer_secret(salesforce_consumer_info: dict[str, str]) -> testing.Secret:
     return testing.Secret(
         tracked_content=salesforce_consumer_info,
     )
@@ -117,7 +119,7 @@ def salesforce_consumer_secret(salesforce_consumer_info: Dict[str, str]) -> test
 @pytest.fixture()
 def mocked_secrets(
     api_token_secret: testing.Secret, salesforce_consumer_secret: testing.Secret
-) -> List[testing.Secret]:
+) -> list[testing.Secret]:
     return [api_token_secret, salesforce_consumer_secret]
 
 
@@ -176,4 +178,53 @@ def database_relation(database_relation_data: dict) -> testing.Relation:
         interface="postgresql_client",
         remote_app_name="postgres-k8s",
         remote_app_data=database_relation_data,
+    )
+
+
+@pytest.fixture
+def migration_check_exec_factory() -> Callable[[str], Exec]:
+    def _factory(status: str = "ok") -> Exec:
+        return Exec(
+            command_prefix=[
+                "hook-service",
+                "migrate",
+            ],
+            return_code=0,
+            stdout=f'{{"status": "{status}"}}',
+        )
+
+    return _factory
+
+
+@pytest.fixture
+def default_migration_check_exec(migration_check_exec_factory: Callable[[str], Exec]) -> Exec:
+    return migration_check_exec_factory()
+
+
+@pytest.fixture
+def context() -> testing.Context:
+    return testing.Context(HookServiceOperatorCharm)
+
+
+@pytest.fixture
+def container(default_migration_check_exec) -> testing.Container:
+    return testing.Container(
+        "hook-service",
+        can_connect=True,
+        execs={default_migration_check_exec},
+    )
+
+
+@pytest.fixture
+def base_state(
+    container: testing.Container,
+    charm_config: dict,
+    mocked_secrets: list[testing.Secret],
+    database_relation: testing.Relation,
+) -> testing.State:
+    return testing.State(
+        containers={container},
+        config=charm_config,
+        secrets=mocked_secrets,
+        relations=[database_relation],
     )

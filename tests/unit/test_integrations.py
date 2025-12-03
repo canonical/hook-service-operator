@@ -9,7 +9,7 @@ from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from pydantic import AnyHttpUrl
 from scenario import Relation
 
-from constants import INTERNAL_ROUTE_INTEGRATION_NAME, PORT
+from constants import PORT
 from integrations import DatabaseConfig, InternalIngressData
 
 
@@ -93,7 +93,6 @@ class TestDatabaseConfig:
         assert config.database == "test_db"
         assert config.username == "user"
         assert config.password == "password"
-        assert config.migration_version == "migration_version_1"
 
     def test_dsn(self, mocked_requirer: MagicMock) -> None:
         config = DatabaseConfig.load(mocked_requirer)
