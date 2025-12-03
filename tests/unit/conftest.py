@@ -7,8 +7,10 @@ from unittest.mock import MagicMock, PropertyMock, create_autospec
 import pytest
 from ops import CollectStatusEvent, EventBase, testing
 from ops.model import ActiveStatus, Container, Unit
-from ops.testing import Model
+from ops.testing import Exec, Model
 from pytest_mock import MockerFixture
+
+from charm import HookServiceOperatorCharm
 
 
 @pytest.fixture(autouse=True)
@@ -176,4 +178,53 @@ def database_relation(database_relation_data: dict) -> testing.Relation:
         interface="postgresql_client",
         remote_app_name="postgres-k8s",
         remote_app_data=database_relation_data,
+    )
+
+
+@pytest.fixture
+def migration_check_exec_factory():
+    def _factory(status: str = "synced") -> Exec:
+        return Exec(
+            command_prefix=[
+                "hook-service",
+                "migrate",
+            ],
+            return_code=0,
+            stdout=f'{{"status": "{status}"}}',
+        )
+
+    return _factory
+
+
+@pytest.fixture
+def default_migration_check_exec(migration_check_exec_factory) -> Exec:
+    return migration_check_exec_factory()
+
+
+@pytest.fixture
+def context() -> testing.Context:
+    return testing.Context(HookServiceOperatorCharm)
+
+
+@pytest.fixture
+def container(default_migration_check_exec) -> testing.Container:
+    return testing.Container(
+        "hook-service",
+        can_connect=True,
+        execs={default_migration_check_exec},
+    )
+
+
+@pytest.fixture
+def base_state(
+    container: testing.Container,
+    charm_config: dict,
+    mocked_secrets: List[testing.Secret],
+    database_relation: testing.Relation,
+) -> testing.State:
+    return testing.State(
+        containers={container},
+        config=charm_config,
+        secrets=mocked_secrets,
+        relations=[database_relation],
     )
