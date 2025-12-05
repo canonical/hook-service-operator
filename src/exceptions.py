@@ -14,3 +14,11 @@ class InvalidSalesforceConfig(CharmError):
 
 class PebbleError(CharmError):
     """Error for pebble related operations."""
+
+
+class MigrationError(CharmError):
+    """Error for database migration."""
+
+
+class MigrationCheckError(CharmError):
+    """Error for database migration check."""
