@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.4](https://github.com/canonical/hook-service-operator/compare/v1.0.3...v1.0.4) (2025-12-12)
+
+
+### Bug Fixes
+
+* add database integration ([4b9ab01](https://github.com/canonical/hook-service-operator/commit/4b9ab0156812771a7f68e4aa8c19ceca216e0046))
+* add internal route ([34974df](https://github.com/canonical/hook-service-operator/commit/34974df942a6ca0edccf919eb84ead827c4627ea))
+* update charm dependent libs ([2f4da4a](https://github.com/canonical/hook-service-operator/commit/2f4da4a386e88c517c4a4982d824c5811b261437))
+
 ## [1.0.3](https://github.com/canonical/hook-service-operator/compare/v1.0.2...v1.0.3) (2025-12-02)
 
 
