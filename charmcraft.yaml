@@ -80,11 +80,17 @@ requires:
     optional: true
     description: |
       Provides traces to COS Tempo instance
-  ingress:
+  internal-route:
     interface: traefik_route
     limit: 1
     optional: true
-    description: Ingress used to expose the service to the public internet
+    description: |
+      Allows the charm to be exposed for cross-cluster communication, needed
+      for cases where network topology is more complex than just one k8s cluster
+  pg-database:
+    interface: postgresql_client
+    optional: false
+    limit: 1
 
 provides:
   metrics-endpoint:
@@ -112,7 +118,7 @@ resources:
   oci-image:
     type: oci-image
     description: OCI image for hook-service
-    upstream-source: ghcr.io/canonical/hook-service:v1.0.0
+    upstream-source: ghcr.io/canonical/hook-service:v1.0.2
 
 parts:
   charm:

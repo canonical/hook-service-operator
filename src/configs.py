@@ -3,7 +3,7 @@
 
 """Helper class to manage the charm's config."""
 
-from typing import Any, List, Mapping, Tuple, TypeAlias
+from typing import Any, Mapping, Tuple, TypeAlias
 
 from ops import ConfigData, Model
 
@@ -40,7 +40,7 @@ class CharmConfig:
         except Exception as e:
             raise InvalidSalesforceConfig from e
 
-    def get_missing_config_keys(self) -> List:
+    def get_missing_config_keys(self) -> list:
         """Get missing config keys."""
         if not self._config.get("salesforce_enabled"):
             return []

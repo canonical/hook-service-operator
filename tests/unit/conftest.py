@@ -1,28 +1,32 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-from typing import Dict, List
+from typing import Callable
 from unittest.mock import MagicMock, PropertyMock, create_autospec
 
 import pytest
 from ops import CollectStatusEvent, EventBase, testing
-from ops.model import Container, Unit
-from ops.testing import Model
+from ops.model import ActiveStatus, Container, Unit
+from ops.testing import Exec, Model
 from pytest_mock import MockerFixture
+
+from charm import HookServiceOperatorCharm
 
 
 @pytest.fixture(autouse=True)
 def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
-    mocker.patch(
+    mock_patcher_cls = mocker.patch(
         "charms.observability_libs.v0.kubernetes_compute_resources_patch.ResourcePatcher",
         autospec=True,
     )
-    mocker.patch.multiple(
-        "charm.KubernetesComputeResourcesPatch",
-        _namespace="model",
-        _patch=lambda *a, **kw: True,
-        is_ready=lambda *a, **kw: True,
-    )
+    mock_patcher_instance = mock_patcher_cls.return_value
+    mock_patcher_instance.is_failed.return_value = (False, "")
+    mock_patcher_instance.is_ready.return_value = True
+
+    mocker.patch("charm.KubernetesComputeResourcesPatch.is_ready", return_value=True)
+    mocker.patch("charm.KubernetesComputeResourcesPatch.get_status", return_value=ActiveStatus())
+    mocker.patch("charm.KubernetesComputeResourcesPatch._patch", return_value=True)
+    mocker.patch("charm.KubernetesComputeResourcesPatch._namespace", return_value="model")
 
 
 @pytest.fixture
@@ -70,7 +74,7 @@ def mocked_event() -> MagicMock:
 
 
 @pytest.fixture
-def ingress_integration_data() -> dict:
+def internal_route_integration_data() -> dict:
     return {
         "external_host": "some-host",
         "scheme": "http",
@@ -78,12 +82,12 @@ def ingress_integration_data() -> dict:
 
 
 @pytest.fixture
-def ingress_integration(ingress_integration_data: dict) -> testing.Relation:
+def internal_route_integration(internal_route_integration_data: dict) -> testing.Relation:
     return testing.Relation(
-        endpoint="ingress",
+        endpoint="internal-route",
         interface="traefik_route",
         remote_app_name="traefik",
-        remote_app_data=ingress_integration_data,
+        remote_app_data=internal_route_integration_data,
     )
 
 
@@ -93,7 +97,7 @@ def api_token() -> str:
 
 
 @pytest.fixture()
-def salesforce_consumer_info() -> Dict[str, str]:
+def salesforce_consumer_info() -> dict[str, str]:
     return {"consumer-key": "key", "consumer-secret": "secret"}
 
 
@@ -106,7 +110,7 @@ def api_token_secret(api_token: str) -> testing.Secret:
 
 
 @pytest.fixture()
-def salesforce_consumer_secret(salesforce_consumer_info: str) -> testing.Secret:
+def salesforce_consumer_secret(salesforce_consumer_info: dict[str, str]) -> testing.Secret:
     return testing.Secret(
         tracked_content=salesforce_consumer_info,
     )
@@ -115,7 +119,7 @@ def salesforce_consumer_secret(salesforce_consumer_info: str) -> testing.Secret:
 @pytest.fixture()
 def mocked_secrets(
     api_token_secret: testing.Secret, salesforce_consumer_secret: testing.Secret
-) -> List[testing.Secret]:
+) -> list[testing.Secret]:
     return [api_token_secret, salesforce_consumer_secret]
 
 
@@ -146,3 +150,81 @@ def all_satisfied_conditions(mocker: MockerFixture) -> None:
     mocker.patch("charm.Secrets.is_ready", return_value=True)
     mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
     mocker.patch("charm.WorkloadService.is_running", return_value=True)
+
+
+@pytest.fixture
+def mocked_cli(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.CommandLine")
+
+
+@pytest.fixture
+def mocked_database_config(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.DatabaseConfig")
+
+
+@pytest.fixture
+def database_relation_data() -> dict:
+    return {
+        "endpoints": "postgres-k8s-primary.namespace.svc.cluster.local:5432",
+        "username": "username",
+        "password": "password",
+    }
+
+
+@pytest.fixture
+def database_relation(database_relation_data: dict) -> testing.Relation:
+    return testing.Relation(
+        endpoint="pg-database",
+        interface="postgresql_client",
+        remote_app_name="postgres-k8s",
+        remote_app_data=database_relation_data,
+    )
+
+
+@pytest.fixture
+def migration_check_exec_factory() -> Callable[[str], Exec]:
+    def _factory(status: str = "ok") -> Exec:
+        return Exec(
+            command_prefix=[
+                "hook-service",
+                "migrate",
+            ],
+            return_code=0,
+            stdout=f'{{"status": "{status}"}}',
+        )
+
+    return _factory
+
+
+@pytest.fixture
+def default_migration_check_exec(migration_check_exec_factory: Callable[[str], Exec]) -> Exec:
+    return migration_check_exec_factory()
+
+
+@pytest.fixture
+def context() -> testing.Context:
+    return testing.Context(HookServiceOperatorCharm)
+
+
+@pytest.fixture
+def container(default_migration_check_exec) -> testing.Container:
+    return testing.Container(
+        "hook-service",
+        can_connect=True,
+        execs={default_migration_check_exec},
+    )
+
+
+@pytest.fixture
+def base_state(
+    container: testing.Container,
+    charm_config: dict,
+    mocked_secrets: list[testing.Secret],
+    database_relation: testing.Relation,
+) -> testing.State:
+    return testing.State(
+        containers={container},
+        config=charm_config,
+        secrets=mocked_secrets,
+        relations=[database_relation],
+    )
