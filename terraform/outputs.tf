@@ -9,8 +9,10 @@ output "app_name" {
 output "requires" {
   description = "The Juju integrations that the charm requires"
   value = {
-    logging = "logging"
-    tracing = "tracing"
+    logging        = "logging"
+    tracing        = "tracing"
+    pg-database    = "pg-database"
+    internal-route = "internal-route"
   }
 }
 
