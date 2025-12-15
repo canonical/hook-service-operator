@@ -1,98 +1,110 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-import functools
 import os
+import uuid
 from pathlib import Path
-from typing import AsyncGenerator, Awaitable, Callable, Optional
+from typing import Generator, Iterator
 
-import httpx
-import pytest_asyncio
-import yaml
-from pytest_operator.plugin import OpsTest
-
-from constants import INTERNAL_ROUTE_INTEGRATION_NAME
-
-METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
-APP_NAME = METADATA["name"]
-TRAEFIK_CHARM = "traefik-k8s"
-TRAEFIK_APP = "traefik"
-DB_CHARM = "postgresql-k8s"
-DB_APP = "postgresql"
-INGRESS_DOMAIN = "public"
+import jubilant
+import pytest
+import requests
+from integration.utils import create_temp_juju_model
 
 
-async def get_unit_data(ops_test: OpsTest, unit_name: str) -> dict:
-    show_unit_cmd = (f"show-unit {unit_name}").split()
-    _, stdout, _ = await ops_test.juju(*show_unit_cmd)
-    cmd_output = yaml.safe_load(stdout)
-    return cmd_output[unit_name]
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add custom command-line options for model management and deployment control.
 
-
-async def get_integration_data(
-    ops_test: OpsTest, app_name: str, integration_name: str, unit_num: int = 0
-) -> Optional[dict]:
-    data = await get_unit_data(ops_test, f"{app_name}/{unit_num}")
-    return next(
-        (
-            integration
-            for integration in data["relation-info"]
-            if integration["endpoint"] == integration_name
-        ),
-        None,
+    This function adds the following options:
+        --keep-models: Keep the Juju model after the test is finished.
+        --model: Specify the Juju model to run the tests on.
+        --no-deploy: Skip deployment of the charm.
+    """
+    parser.addoption(
+        "--keep-models",
+        action="store_true",
+        default=False,
+        help="Keep the model after the test is finished.",
+    )
+    parser.addoption(
+        "--model",
+        action="store",
+        default=None,
+        help="The model to run the tests on.",
+    )
+    parser.addoption(
+        "--no-deploy",
+        action="store_true",
+        default=False,
+        help="Skip deployment of the charm.",
     )
 
 
-async def get_app_integration_data(
-    ops_test: OpsTest,
-    app_name: str,
-    integration_name: str,
-    unit_num: int = 0,
-) -> Optional[dict]:
-    data = await get_integration_data(ops_test, app_name, integration_name, unit_num)
-    return data["application-data"] if data else None
+def pytest_configure(config: pytest.Config) -> None:
+    """Register custom markers for test selection based on deployment and model management.
+
+    This function registers the following markers:
+        skip_if_deployed: Skip tests if the charm is already deployed.
+        skip_if_keep_models: Skip tests if the --keep-models option is set.
+    """
+    config.addinivalue_line("markers", "skip_if_deployed: skip test if deployed")
+    config.addinivalue_line("markers", "skip_if_keep_models: skip test if --keep-models is set.")
 
 
-@pytest_asyncio.fixture
-async def app_integration_data(ops_test: OpsTest) -> Callable:
-    return functools.partial(get_app_integration_data, ops_test)
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Modify collected test items based on command-line options.
+
+    This function skips tests with specific markers based on the provided command-line options:
+        - If --no-deploy is set, tests marked with "skip_if_deployed
+          are skipped.
+        - If --keep-models is set, tests marked with "skip_if_keep_models"
+          are skipped.
+    """
+    for item in items:
+        if config.getoption("--no-deploy") and "skip_if_deployed" in item.keywords:
+            skip_deployed = pytest.mark.skip(reason="skipping deployment")
+            item.add_marker(skip_deployed)
+        if config.getoption("--keep-models") and "skip_if_keep_models" in item.keywords:
+            skip_keep_models = pytest.mark.skip(reason="skipping test because --keep-models is set")
+            item.add_marker(skip_keep_models)
 
 
-@pytest_asyncio.fixture
-async def leader_ingress_integration_data(app_integration_data: Callable) -> dict:
-    data = await app_integration_data(APP_NAME, INTERNAL_ROUTE_INTEGRATION_NAME)
-    assert data
-    return data
+@pytest.fixture(scope="module")
+def model(request: pytest.FixtureRequest) -> Iterator[jubilant.Juju]:
+    """Create a temporary Juju model for integration tests."""
+    model_name = request.config.getoption("--model")
+    if not model_name:
+        model_name = f"test-hook-service-{uuid.uuid4().hex[-8:]}"
+
+    yield from create_temp_juju_model(request, model=model_name)
 
 
-async def unit_address(ops_test: OpsTest, *, app_name: str, unit_num: int = 0) -> str:
-    status = await ops_test.model.get_status()
-    return status["applications"][app_name]["units"][f"{app_name}/{unit_num}"]["address"]
-
-
-@pytest_asyncio.fixture
-async def internal_address() -> Callable[[OpsTest, int], Awaitable[str]]:
-    return functools.partial(unit_address, app_name=TRAEFIK_APP)
-
-
-@pytest_asyncio.fixture(scope="module")
-async def local_charm(ops_test: OpsTest) -> Path:
+@pytest.fixture(scope="module")
+def local_charm(model: jubilant.Juju) -> Path:
+    """Get the path to the charm-under-test."""
     # in GitHub CI, charms are built with charmcraftcache and uploaded to $CHARM_PATH
-    charm = os.getenv("CHARM_PATH")
+    charm: str | Path | None = os.getenv("CHARM_PATH")
     if not charm:
-        # fall back to build locally - required when run outside of GitHub CI
-        charm = await ops_test.build_charm(".")
-    return charm
+        import subprocess
+
+        subprocess.run(["charmcraft", "pack"], check=True)
+        charms = list(Path(".").glob("*.charm"))
+        if charms:
+            charm = charms[0].absolute()
+        else:
+            raise RuntimeError("Charm not found and build failed")
+    return Path(charm)
 
 
-@pytest_asyncio.fixture
-async def http_client() -> AsyncGenerator[httpx.AsyncClient, None]:
-    async with httpx.AsyncClient(verify=False) as client:
+@pytest.fixture
+def http_client() -> Generator[requests.Session, None, None]:
+    with requests.Session() as client:
+        client.verify = False
         yield client
 
 
-@pytest_asyncio.fixture
-async def charm_config(ops_test: OpsTest) -> dict:
+@pytest.fixture
+def charm_config() -> dict:
     return {
         "salesforce_enabled": False,
     }

@@ -31,7 +31,7 @@ Data flows from **Sources** (Config, Relations, Secrets) -> **Orchestration** (`
   - **Fixtures**: Use `pytest` fixtures in `tests/unit/conftest.py` to provide common test objects like `testing.Context`, `testing.State`, and `testing.Container`. This reduces boilerplate in individual test methods.
     - Use `dataclasses.replace(default_state, ...)` to create modified states for specific test cases.
 - **Integration Tests**: `tox -e integration`. Tests are in `tests/integration/`.
-  - Uses `pytest-operator`.
+  - Uses `jubilant`.
 - **Build**: `charmcraft pack`.
 - **Library Management**: Files in `lib/charms/` are managed by `charmcraft`. Treat them as **read-only** unless they are explicitly defined and maintained by this repository (e.g., if this charm *provides* the library).
 
@@ -84,12 +84,18 @@ Data flows from **Sources** (Config, Relations, Secrets) -> **Orchestration** (`
   - **Mocking**:
     - Mock `ops.model.Container` and external libraries.
     - **Resource Patching**: When using `KubernetesComputeResourcesPatch`, ensure it is mocked to return `ActiveStatus` (and `is_failed=(False, "")`) in unit tests. Otherwise, it may default to `WaitingStatus`, causing unrelated status assertions to fail.
-- **Integration Tests**: Cover the following scenarios:
-  - **Build and Deploy**: Verify charm status.
-  - **Integrations**: Test with required and optional relations (add/remove).
-  - **Scaling**: Scale up/down and verify status/unit count.
-  - **Resilience**: Destroy leader unit, destroy dependent charms.
-  - **Actions**: Execute and verify Juju actions.
+- **Integration Tests**: `tox -e integration`. Tests are in `tests/integration/`.
+  - Uses `jubilant`.
+  - **Lifecycle Requirements**:
+    - **Deploy**: Deploy app with dependencies. *Must be skippable* (e.g., via `--no-deploy`) to test against existing environments.
+    - **Scale Up**: Increase unit count (e.g., to 3). Verify high availability and leader election.
+    - **Business Logic**: Test core application functionality (e.g., HTTP requests, database writes).
+    - **Integrations**: Test adding and removing relations (e.g., database, ingress, observability). Verify configuration updates.
+    - **Actions**: Execute and verify Juju actions.
+    - **Scale Down**: Decrease unit count. Verify cluster stability and data retention.
+    - **Resilience**: Test failure scenarios (e.g., killing leader unit, destroying dependent charms).
+    - **Upgrade**: Deploy from stable channel, then upgrade to local artifact. Verify functionality before and after.
+    - **Removal**: Remove the application. *Must be skippable* (e.g., via `--keep-models`) for debugging.
 
 ## Integration Points
 
