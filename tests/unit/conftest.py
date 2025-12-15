@@ -145,11 +145,16 @@ def mocked_collect_status_event() -> MagicMock:
 
 
 @pytest.fixture
-def all_satisfied_conditions(mocker: MockerFixture) -> None:
-    mocker.patch("charm.container_connectivity", return_value=True)
-    mocker.patch("charm.Secrets.is_ready", return_value=True)
-    mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
-    mocker.patch("charm.WorkloadService.is_running", return_value=True)
+def all_satisfied_conditions(
+    mocked_container_connectivity: MagicMock,
+    mocked_secrets_is_ready: MagicMock,
+    mocked_get_missing_config_keys: MagicMock,
+    mocked_is_running: MagicMock,
+    mocked_database_integration_exists: MagicMock,
+    mocked_database_resource_is_created: MagicMock,
+    mocked_migration_is_ready: MagicMock,
+) -> None:
+    pass
 
 
 @pytest.fixture
@@ -198,7 +203,7 @@ def migration_check_exec_factory() -> Callable[[str], Exec]:
 
 @pytest.fixture
 def default_migration_check_exec(migration_check_exec_factory: Callable[[str], Exec]) -> Exec:
-    return migration_check_exec_factory()
+    return migration_check_exec_factory("ok")
 
 
 @pytest.fixture
@@ -228,3 +233,33 @@ def base_state(
         secrets=mocked_secrets,
         relations=[database_relation],
     )
+
+
+@pytest.fixture
+def mocked_database_integration_exists(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.database_integration_exists", return_value=True)
+
+
+@pytest.fixture
+def mocked_database_resource_is_created(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.database_resource_is_created", return_value=True)
+
+
+@pytest.fixture
+def mocked_migration_is_ready(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.migration_is_ready", return_value=True)
+
+
+@pytest.fixture
+def mocked_container_connectivity(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.container_connectivity", return_value=True)
+
+
+@pytest.fixture
+def mocked_secrets_is_ready(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.Secrets.is_ready", return_value=True)
+
+
+@pytest.fixture
+def mocked_get_missing_config_keys(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
