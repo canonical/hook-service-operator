@@ -56,17 +56,22 @@ provider "juju" {
 
 }
 
+data "juju_model" "model" {
+  owner = format("%s@serviceaccount", var.client_id)
+  name  = var.model
+}
+
 data "juju_secret" "salesforce_consumer_secret" {
   // The secret is created when we deploy the service. The name must be
   // the same with whatever we have in
   // https://github.com/canonical/cd-identity-core-infrastructure/blob/main/modules/hook_service/main.tf
-  name  = "hook_service_salesforce_credentials"
-  model = var.model
+  name       = "hook_service_salesforce_credentials"
+  model_uuid = data.juju_model.model.uuid
 }
 
 module "application" {
   source                           = "../terraform"
-  model_name                       = var.model
+  model                            = data.juju_model.model.uuid
   app_name                         = var.application_name
   units                            = var.charm.units
   base                             = var.charm.base
