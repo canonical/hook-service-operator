@@ -100,4 +100,4 @@ ignore_missing_imports = true
 module = ["ops.*", "pytest.*", "jubilant.*", "urllib3.*", "jinja2.*", "lightkube.*", "pytest_mock.*"]
 
 [tool.pyright]
-extraPaths = ["lib"]
+extraPaths = ["src", "lib"]

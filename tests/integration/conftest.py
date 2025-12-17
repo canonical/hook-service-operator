@@ -65,7 +65,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             skip_deployed = pytest.mark.skip(reason="skipping deployment")
             item.add_marker(skip_deployed)
         if config.getoption("--keep-models") and "skip_if_keep_models" in item.keywords:
-            skip_keep_models = pytest.mark.skip(reason="skipping test because --keep-models is set")
+            skip_keep_models = pytest.mark.skip(
+                reason="skipping test because --keep-models is set"
+            )
             item.add_marker(skip_keep_models)
 
 

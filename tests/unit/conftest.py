@@ -187,23 +187,29 @@ def database_relation(database_relation_data: dict) -> testing.Relation:
 
 
 @pytest.fixture
-def migration_check_exec_factory() -> Callable[[str], Exec]:
-    def _factory(status: str = "ok") -> Exec:
+def migration_exec_factory() -> Callable[[str, str, int], Exec]:
+    def _factory(command: str, stdout: str, return_code: int) -> Exec:
         return Exec(
             command_prefix=[
                 "hook-service",
                 "migrate",
+                command,
             ],
-            return_code=0,
-            stdout=f'{{"status": "{status}"}}',
+            return_code=return_code,
+            stdout=stdout,
         )
 
     return _factory
 
 
 @pytest.fixture
-def default_migration_check_exec(migration_check_exec_factory: Callable[[str], Exec]) -> Exec:
-    return migration_check_exec_factory("ok")
+def default_migration_check_exec(migration_exec_factory: Callable[[str, str, int], Exec]) -> Exec:
+    return migration_exec_factory("check", '{"status": "ok"}', 0)
+
+
+@pytest.fixture
+def default_migration_up_exec(migration_exec_factory: Callable[[str, str, int], Exec]) -> Exec:
+    return migration_exec_factory("up", "", 0)
 
 
 @pytest.fixture
@@ -212,11 +218,13 @@ def context() -> testing.Context:
 
 
 @pytest.fixture
-def container(default_migration_check_exec) -> testing.Container:
+def container(
+    default_migration_check_exec: Exec, default_migration_up_exec: Exec
+) -> testing.Container:
     return testing.Container(
         "hook-service",
         can_connect=True,
-        execs={default_migration_check_exec},
+        execs={default_migration_check_exec, default_migration_up_exec},
     )
 
 

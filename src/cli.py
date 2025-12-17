@@ -63,11 +63,11 @@ class CommandLine:
         cmd = [
             "hook-service",
             "migrate",
+            "up",
             "--dsn",
             dsn,
             "-f",
             "json",
-            "up",
         ]
 
         try:
@@ -93,11 +93,11 @@ class CommandLine:
         cmd = [
             "hook-service",
             "migrate",
+            "down",
             "--dsn",
             dsn,
             "-f",
             "json",
-            "down",
         ]
 
         if version:
@@ -127,11 +127,11 @@ class CommandLine:
         cmd = [
             "hook-service",
             "migrate",
+            "check",
             "--dsn",
             dsn,
             "-f",
             "json",
-            "check",
         ]
 
         try:
