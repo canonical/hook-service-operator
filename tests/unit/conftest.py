@@ -309,6 +309,7 @@ def base_state(
         secrets=mocked_secrets,
         relations=[database_relation, openfga_relation, peer_relation],
         model=testing.Model(name="test-model"),
+        leader=True,
     )
 
 

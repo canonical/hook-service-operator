@@ -131,7 +131,6 @@ class TestHolisticHandler:
         state_in = replace_state(
             base_state,
             relations=[internal_route_integration] + list(base_state.relations),
-            leader=True,
         )
 
         # We abuse the config_changed event, to run the unit tests on holistic_handler.
@@ -185,9 +184,8 @@ class TestHolisticHandler:
         mocked_cli: MagicMock,
     ) -> None:
         mocked_cli.return_value.migration_check.return_value = False
-        state_in = replace_state(base_state, leader=True)
 
-        context.run(context.on.config_changed(), state_in)
+        context.run(context.on.config_changed(), base_state)
 
         mocked_cli.return_value.migrate_up.assert_called_once()
 
@@ -200,9 +198,7 @@ class TestHolisticHandler:
         mocked_cli.return_value.migration_check.return_value = False
         mocked_cli.return_value.migrate_up.side_effect = MigrationError("failed")
 
-        state_in = replace_state(base_state, leader=True)
-
-        context.run(context.on.config_changed(), state_in)
+        context.run(context.on.config_changed(), base_state)
 
         mocked_cli.return_value.migrate_up.assert_called_once()
 
@@ -214,7 +210,7 @@ class TestHolisticHandler:
     ) -> None:
         mocked_cli.return_value.migration_check.side_effect = MigrationCheckError("failed")
 
-        state_in = replace_state(base_state, leader=True, relations=[])
+        state_in = replace_state(base_state, relations=[])
 
         context.run(context.on.config_changed(), state_in)
 
@@ -386,12 +382,8 @@ class TestOpenFGAEvents:
         mocked_workload_service_version: MagicMock,
     ) -> None:
         version = mocked_workload_service_version.return_value
-        state_in = replace_state(
-            base_state,
-            leader=True,
-        )
 
-        state_out = context.run(context.on.relation_departed(openfga_relation), state_in)
+        state_out = context.run(context.on.relation_departed(openfga_relation), base_state)
 
         mocked_charm_holistic_handler.assert_called_once()
         peer_rel_out = state_out.get_relation(peer_relation.id)
