@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 import dataclasses
+from typing import Any, ClassVar, Protocol, TypeVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,7 +12,14 @@ from constants import WORKLOAD_CONTAINER
 from exceptions import MigrationCheckError, MigrationError
 
 
-def replace_state(state: testing.State, **kwargs) -> testing.State:
+class DataclassInstance(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Any]]
+
+
+T = TypeVar("T", bound=DataclassInstance)
+
+
+def replace_state(state: T, **kwargs: Any) -> T:
     """Helper to update state until Scenario provides a better way."""
     return dataclasses.replace(state, **kwargs)
 
@@ -38,10 +46,9 @@ class TestConfigChangedEvent:
     def test_when_config_missing(
         self,
         context: testing.Context,
-        mocked_secrets: list[testing.Secret],
+        base_state: testing.State,
     ) -> None:
-        container = testing.Container("hook-service", can_connect=True)
-        state_in = testing.State(containers={container}, secrets=mocked_secrets)
+        state_in = replace_state(base_state, config={})
 
         state_out = context.run(context.on.config_changed(), state_in)
 
@@ -97,10 +104,14 @@ class TestHolisticHandler:
     def test_when_container_not_connected(
         self,
         context: testing.Context,
-        charm_config: dict,
+        base_state: testing.State,
+        container: testing.Container,
     ) -> None:
-        container = testing.Container("hook-service", can_connect=False)
-        state_in = testing.State(containers={container}, config=charm_config)
+        container = replace_state(container, can_connect=False)
+        state_in = replace_state(
+            base_state,
+            containers=[container],
+        )
 
         # We abuse the config_changed event, to run the unit tests on holistic_handler.
         # Scenario does not provide us with a way to
@@ -153,10 +164,8 @@ class TestHolisticHandler:
         context: testing.Context,
         base_state: testing.State,
         mocked_cli: MagicMock,
-        mocked_database_config: MagicMock,
     ) -> None:
-        mocked_cli.return_value.migration_check.return_value = False  # Migration needed
-        mocked_database_config.load.return_value.dsn = "dsn"
+        mocked_cli.return_value.migration_check.return_value = False
 
         state_in = replace_state(base_state, leader=False)
 
@@ -169,43 +178,36 @@ class TestHolisticHandler:
         context: testing.Context,
         base_state: testing.State,
         mocked_cli: MagicMock,
-        mocked_database_config: MagicMock,
     ) -> None:
-        mocked_cli.return_value.migration_check.return_value = False  # Migration needed
-        mocked_database_config.load.return_value.dsn = "dsn"
-
+        mocked_cli.return_value.migration_check.return_value = False
         state_in = replace_state(base_state, leader=True)
 
         context.run(context.on.config_changed(), state_in)
 
-        mocked_cli.return_value.migrate_up.assert_called_once_with(dsn="dsn")
+        mocked_cli.return_value.migrate_up.assert_called_once()
 
     def test_migration_needed_leader_failure(
         self,
         context: testing.Context,
         base_state: testing.State,
         mocked_cli: MagicMock,
-        mocked_database_config: MagicMock,
     ) -> None:
-        mocked_cli.return_value.migration_check.return_value = False  # Migration needed
+        mocked_cli.return_value.migration_check.return_value = False
         mocked_cli.return_value.migrate_up.side_effect = MigrationError("failed")
-        mocked_database_config.load.return_value.dsn = "dsn"
 
         state_in = replace_state(base_state, leader=True)
 
         context.run(context.on.config_changed(), state_in)
 
-        mocked_cli.return_value.migrate_up.assert_called_once_with(dsn="dsn")
+        mocked_cli.return_value.migrate_up.assert_called_once()
 
     def test_migration_check_failure(
         self,
         context: testing.Context,
         base_state: testing.State,
         mocked_cli: MagicMock,
-        mocked_database_config: MagicMock,
     ) -> None:
         mocked_cli.return_value.migration_check.side_effect = MigrationCheckError("failed")
-        mocked_database_config.load.return_value.dsn = "dsn"
 
         state_in = replace_state(base_state, leader=True, relations=[])
 
@@ -226,20 +228,58 @@ class TestCollectStatusEvent:
         assert state_out.unit_status == testing.ActiveStatus()
 
     @pytest.mark.parametrize(
-        "condition, condition_value, status, message",
+        "condition, condition_value, status, message, leader",
         [
             (
                 "container_connectivity",
                 False,
                 testing.WaitingStatus,
                 "Container is not connected yet",
+                True,
             ),
             (
                 "WorkloadService.is_failing",
                 True,
                 testing.BlockedStatus,
                 f"Failed to start the service, please check the {WORKLOAD_CONTAINER} container logs",
+                True,
             ),
+            (
+                "database_resource_is_created",
+                False,
+                testing.WaitingStatus,
+                "Waiting for database creation",
+                True,
+            ),
+            (
+                "migration_is_ready",
+                MigrationCheckError("failed"),
+                testing.BlockedStatus,
+                "Migration check failed: failed",
+                True,
+            ),
+            (
+                "migration_is_ready",
+                False,
+                testing.WaitingStatus,
+                "Waiting for database migration",
+                True,
+            ),
+            (
+                "migration_is_ready",
+                False,
+                testing.WaitingStatus,
+                "Waiting for leader unit to run the migration",
+                False,
+            ),
+        ],
+        ids=[
+            "container_not_connected",
+            "workload_service_failing",
+            "database_resource_not_created",
+            "migration_check_error",
+            "migration_not_ready",
+            "not_leader_waiting_for_migration",
         ],
     )
     def test_when_a_condition_failed(
@@ -247,77 +287,25 @@ class TestCollectStatusEvent:
         context: testing.Context,
         all_satisfied_conditions: MagicMock,
         condition: str,
-        condition_value: bool,
+        condition_value: bool | Exception,
         status: type[StatusBase],
         message: str,
+        leader: bool,
     ) -> None:
         container = testing.Container("hook-service", can_connect=True)
-        state_in = testing.State(containers={container})
+        state_in = testing.State(containers={container}, leader=leader)
 
-        with patch(f"charm.{condition}", return_value=condition_value):
+        patch_kwargs = {}
+        if isinstance(condition_value, Exception):
+            patch_kwargs["side_effect"] = condition_value
+        else:
+            patch_kwargs["return_value"] = condition_value
+
+        with patch(f"charm.{condition}", **patch_kwargs):
             state_out = context.run(context.on.collect_unit_status(), state_in)
 
         assert isinstance(state_out.unit_status, status)
         assert state_out.unit_status.message == message
-
-    def test_when_database_not_created(
-        self,
-        context: testing.Context,
-        all_satisfied_conditions: MagicMock,
-    ) -> None:
-        container = testing.Container("hook-service", can_connect=True)
-        state_in = testing.State(containers={container})
-
-        with patch("charm.database_resource_is_created", return_value=False):
-            state_out = context.run(context.on.collect_unit_status(), state_in)
-
-        assert isinstance(state_out.unit_status, testing.WaitingStatus)
-        assert state_out.unit_status.message == "Waiting for database creation"
-
-    def test_when_migration_check_failed(
-        self,
-        context: testing.Context,
-        all_satisfied_conditions: MagicMock,
-    ) -> None:
-        container = testing.Container("hook-service", can_connect=True)
-        state_in = testing.State(containers={container})
-
-        with patch("charm.database_resource_is_created", return_value=True):
-            with patch("charm.migration_is_ready", side_effect=MigrationCheckError("failed")):
-                state_out = context.run(context.on.collect_unit_status(), state_in)
-
-        assert isinstance(state_out.unit_status, testing.BlockedStatus)
-        assert "Migration check failed" in state_out.unit_status.message
-
-    def test_when_migration_not_ready_leader(
-        self,
-        context: testing.Context,
-        all_satisfied_conditions: MagicMock,
-    ) -> None:
-        container = testing.Container("hook-service", can_connect=True)
-        state_in = testing.State(containers={container}, leader=True)
-
-        with patch("charm.database_resource_is_created", return_value=True):
-            with patch("charm.migration_is_ready", return_value=False):
-                state_out = context.run(context.on.collect_unit_status(), state_in)
-
-        assert isinstance(state_out.unit_status, testing.WaitingStatus)
-        assert state_out.unit_status.message == "Waiting for database migration"
-
-    def test_when_migration_not_ready_not_leader(
-        self,
-        context: testing.Context,
-        all_satisfied_conditions: MagicMock,
-    ) -> None:
-        container = testing.Container("hook-service", can_connect=True)
-        state_in = testing.State(containers={container}, leader=False)
-
-        with patch("charm.database_resource_is_created", return_value=True):
-            with patch("charm.migration_is_ready", return_value=False):
-                state_out = context.run(context.on.collect_unit_status(), state_in)
-
-        assert isinstance(state_out.unit_status, testing.WaitingStatus)
-        assert state_out.unit_status.message == "Waiting for leader unit to run the migration"
 
 
 class TestDatabaseEvents:

@@ -145,11 +145,16 @@ def mocked_collect_status_event() -> MagicMock:
 
 
 @pytest.fixture
-def all_satisfied_conditions(mocker: MockerFixture) -> None:
-    mocker.patch("charm.container_connectivity", return_value=True)
-    mocker.patch("charm.Secrets.is_ready", return_value=True)
-    mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
-    mocker.patch("charm.WorkloadService.is_running", return_value=True)
+def all_satisfied_conditions(
+    mocked_container_connectivity: MagicMock,
+    mocked_secrets_is_ready: MagicMock,
+    mocked_get_missing_config_keys: MagicMock,
+    mocked_is_running: MagicMock,
+    mocked_database_integration_exists: MagicMock,
+    mocked_database_resource_is_created: MagicMock,
+    mocked_migration_is_ready: MagicMock,
+) -> None:
+    pass
 
 
 @pytest.fixture
@@ -182,23 +187,29 @@ def database_relation(database_relation_data: dict) -> testing.Relation:
 
 
 @pytest.fixture
-def migration_check_exec_factory() -> Callable[[str], Exec]:
-    def _factory(status: str = "ok") -> Exec:
+def migration_exec_factory() -> Callable[[str, str, int], Exec]:
+    def _factory(command: str, stdout: str, return_code: int) -> Exec:
         return Exec(
             command_prefix=[
                 "hook-service",
                 "migrate",
+                command,
             ],
-            return_code=0,
-            stdout=f'{{"status": "{status}"}}',
+            return_code=return_code,
+            stdout=stdout,
         )
 
     return _factory
 
 
 @pytest.fixture
-def default_migration_check_exec(migration_check_exec_factory: Callable[[str], Exec]) -> Exec:
-    return migration_check_exec_factory()
+def default_migration_check_exec(migration_exec_factory: Callable[[str, str, int], Exec]) -> Exec:
+    return migration_exec_factory("check", '{"status": "ok"}', 0)
+
+
+@pytest.fixture
+def default_migration_up_exec(migration_exec_factory: Callable[[str, str, int], Exec]) -> Exec:
+    return migration_exec_factory("up", "", 0)
 
 
 @pytest.fixture
@@ -207,11 +218,13 @@ def context() -> testing.Context:
 
 
 @pytest.fixture
-def container(default_migration_check_exec) -> testing.Container:
+def container(
+    default_migration_check_exec: Exec, default_migration_up_exec: Exec
+) -> testing.Container:
     return testing.Container(
         "hook-service",
         can_connect=True,
-        execs={default_migration_check_exec},
+        execs={default_migration_check_exec, default_migration_up_exec},
     )
 
 
@@ -228,3 +241,33 @@ def base_state(
         secrets=mocked_secrets,
         relations=[database_relation],
     )
+
+
+@pytest.fixture
+def mocked_database_integration_exists(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.database_integration_exists", return_value=True)
+
+
+@pytest.fixture
+def mocked_database_resource_is_created(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.database_resource_is_created", return_value=True)
+
+
+@pytest.fixture
+def mocked_migration_is_ready(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.migration_is_ready", return_value=True)
+
+
+@pytest.fixture
+def mocked_container_connectivity(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.container_connectivity", return_value=True)
+
+
+@pytest.fixture
+def mocked_secrets_is_ready(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.Secrets.is_ready", return_value=True)
+
+
+@pytest.fixture
+def mocked_get_missing_config_keys(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])

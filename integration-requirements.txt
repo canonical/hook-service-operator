@@ -1,5 +1,5 @@
+jubilant
 pytest
-juju
-pytest-operator==0.43.2
-httpx
+requests
+tenacity
 -r requirements.txt

@@ -49,6 +49,7 @@ from services import PebbleService, WorkloadService
 from utils import (
     NOOP_CONDITIONS,
     container_connectivity,
+    database_integration_exists,
     database_resource_is_created,
     migration_is_ready,
 )
@@ -313,6 +314,18 @@ class HookServiceOperatorCharm(ops.CharmBase):
             )
             raise
 
+    def _get_migration_status(self) -> ops.StatusBase | None:
+        try:
+            is_migration_ready = migration_is_ready(self)
+        except MigrationCheckError as e:
+            return ops.BlockedStatus(f"Migration check failed: {e}")
+
+        if not is_migration_ready:
+            if self.unit.is_leader():
+                return ops.WaitingStatus("Waiting for database migration")
+            return ops.WaitingStatus("Waiting for leader unit to run the migration")
+        return None
+
     def _on_collect_status(self, event: ops.CollectStatusEvent) -> None:
         if not (can_connect := container_connectivity(self)):
             event.add_status(ops.WaitingStatus("Container is not connected yet"))
@@ -330,19 +343,14 @@ class HookServiceOperatorCharm(ops.CharmBase):
                 )
             )
 
+        if not database_integration_exists(self):
+            event.add_status(ops.BlockedStatus(f"Missing integration {DATABASE_INTEGRATION_NAME}"))
+
         if not database_resource_is_created(self):
             event.add_status(ops.WaitingStatus("Waiting for database creation"))
 
-        try:
-            is_migration_ready = migration_is_ready(self)
-        except MigrationCheckError as e:
-            event.add_status(ops.BlockedStatus(f"Migration check failed: {e}"))
-        else:
-            if self.unit.is_leader() and not is_migration_ready:
-                event.add_status(ops.WaitingStatus("Waiting for database migration"))
-
-            if not self.unit.is_leader() and not is_migration_ready:
-                event.add_status(ops.WaitingStatus("Waiting for leader unit to run the migration"))
+        if migration_status := self._get_migration_status():
+            event.add_status(migration_status)
 
         event.add_status(self.resources_patch.get_status())
         event.add_status(ops.ActiveStatus())
