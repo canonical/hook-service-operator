@@ -91,6 +91,11 @@ requires:
     interface: postgresql_client
     optional: false
     limit: 1
+  openfga:
+    interface: openfga
+    limit: 1
+    description: |
+      Receive OpenFGA server's url and store information.
 
 provides:
   metrics-endpoint:
@@ -108,6 +113,10 @@ provides:
     optional: true
     description: Used to configure the hydra token hook
 
+peers:
+  hook-service:
+    interface: hook_service_peers
+
 containers:
   hook-service:
     gid: 584792
@@ -118,7 +127,7 @@ resources:
   oci-image:
     type: oci-image
     description: OCI image for hook-service
-    upstream-source: ghcr.io/canonical/hook-service:v1.0.2
+    upstream-source: ghcr.io/canonical/hook-service:v1.0.3
 
 parts:
   charm:

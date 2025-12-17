@@ -29,6 +29,12 @@ def mocked_k8s_resource_patch(mocker: MockerFixture) -> None:
     mocker.patch("charm.KubernetesComputeResourcesPatch._namespace", return_value="model")
 
 
+@pytest.fixture(autouse=True)
+def mocked_openfga_integration(mocker: MockerFixture) -> MagicMock:
+    mock = mocker.patch("charm.OpenFGAIntegration.is_store_ready", return_value=True)
+    return mock
+
+
 @pytest.fixture
 def model() -> Model:
     return Model()
@@ -145,6 +151,11 @@ def mocked_collect_status_event() -> MagicMock:
 
 
 @pytest.fixture
+def mocked_openfga_integration_exists(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.openfga_integration_exists", return_value=True)
+
+
+@pytest.fixture
 def all_satisfied_conditions(
     mocked_container_connectivity: MagicMock,
     mocked_secrets_is_ready: MagicMock,
@@ -153,6 +164,7 @@ def all_satisfied_conditions(
     mocked_database_integration_exists: MagicMock,
     mocked_database_resource_is_created: MagicMock,
     mocked_migration_is_ready: MagicMock,
+    mocked_openfga_integration_exists: MagicMock,
 ) -> None:
     pass
 
@@ -187,6 +199,34 @@ def database_relation(database_relation_data: dict) -> testing.Relation:
 
 
 @pytest.fixture
+def openfga_relation_data() -> dict:
+    return {
+        "store_id": "some-store-id",
+        "grpc_api_url": "http://openfga:8081",
+        "http_api_url": "http://openfga:8080",
+    }
+
+
+@pytest.fixture
+def openfga_relation(openfga_relation_data: dict) -> testing.Relation:
+    return testing.Relation(
+        endpoint="openfga",
+        interface="openfga",
+        remote_app_name="openfga",
+        remote_app_data=openfga_relation_data,
+    )
+
+
+@pytest.fixture
+def peer_relation(mocked_workload_service_version: MagicMock) -> testing.PeerRelation:
+    return testing.PeerRelation(
+        endpoint="hook-service",
+        interface="hook_service_peers",
+        local_app_data={mocked_workload_service_version.return_value: '{"some": "data"}'},
+    )
+
+
+@pytest.fixture
 def migration_exec_factory() -> Callable[[str, str, int], Exec]:
     def _factory(command: str, stdout: str, return_code: int) -> Exec:
         return Exec(
@@ -213,18 +253,44 @@ def default_migration_up_exec(migration_exec_factory: Callable[[str, str, int], 
 
 
 @pytest.fixture
+def version_check_exec() -> Exec:
+    return Exec(
+        command_prefix=["hook-service", "version"],
+        return_code=0,
+        stdout="1.0.0",
+    )
+
+
+@pytest.fixture
+def create_fga_model_exec() -> Exec:
+    return Exec(
+        command_prefix=["hook-service", "create-fga-model"],
+        return_code=0,
+        stdout='{"id": "01HT27W9Y00000000000000000"}',
+    )
+
+
+@pytest.fixture
 def context() -> testing.Context:
     return testing.Context(HookServiceOperatorCharm)
 
 
 @pytest.fixture
 def container(
-    default_migration_check_exec: Exec, default_migration_up_exec: Exec
+    default_migration_check_exec: Exec,
+    default_migration_up_exec: Exec,
+    version_check_exec: Exec,
+    create_fga_model_exec: Exec,
 ) -> testing.Container:
     return testing.Container(
         "hook-service",
         can_connect=True,
-        execs={default_migration_check_exec, default_migration_up_exec},
+        execs={
+            default_migration_check_exec,
+            default_migration_up_exec,
+            version_check_exec,
+            create_fga_model_exec,
+        },
     )
 
 
@@ -234,12 +300,15 @@ def base_state(
     charm_config: dict,
     mocked_secrets: list[testing.Secret],
     database_relation: testing.Relation,
+    openfga_relation: testing.Relation,
+    peer_relation: testing.PeerRelation,
 ) -> testing.State:
     return testing.State(
         containers={container},
         config=charm_config,
         secrets=mocked_secrets,
-        relations=[database_relation],
+        relations=[database_relation, openfga_relation, peer_relation],
+        model=testing.Model(name="test-model"),
     )
 
 

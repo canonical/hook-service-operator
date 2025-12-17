@@ -5,12 +5,19 @@ from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
 import pytest
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from charms.openfga_k8s.v1.openfga import OpenfgaProviderAppData, OpenFGARequires
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from pydantic import AnyHttpUrl
 from scenario import Relation
 
 from constants import PORT
-from integrations import DatabaseConfig, InternalIngressData
+from integrations import (
+    DatabaseConfig,
+    InternalIngressData,
+    OpenFGAIntegration,
+    OpenFGAIntegrationData,
+    OpenFGAModelData,
+)
 
 
 class TestInternalIngressData:
@@ -101,3 +108,101 @@ class TestDatabaseConfig:
     def test_to_env_vars(self, mocked_requirer: MagicMock) -> None:
         config = DatabaseConfig.load(mocked_requirer)
         assert config.to_env_vars() == {"DSN": "postgres://user:password@host:5432/test_db"}
+
+
+class TestOpenFGAModelData:
+    def test_load(self) -> None:
+        source = {"openfga_model_id": "test-model-id"}
+        data = OpenFGAModelData.load(source)
+        assert data.model_id == "test-model-id"
+
+    def test_load_empty(self) -> None:
+        source = {}
+        data = OpenFGAModelData.load(source)
+        assert data.model_id == ""
+
+    def test_to_env_vars(self) -> None:
+        data = OpenFGAModelData(model_id="test-model-id")
+        assert data.to_env_vars() == {"OPENFGA_AUTHORIZATION_MODEL_ID": "test-model-id"}
+
+
+class TestOpenFGAIntegrationData:
+    def test_properties(self) -> None:
+        data = OpenFGAIntegrationData(
+            url="http://openfga.local:8080",
+            api_token="token",
+            store_id="store-id",
+        )
+        assert data.api_scheme == "http"
+        assert data.api_host == "openfga.local:8080"
+
+    def test_to_env_vars(self) -> None:
+        data = OpenFGAIntegrationData(
+            url="http://openfga.local:8080",
+            api_token="token",
+            store_id="store-id",
+        )
+        expected = {
+            "OPENFGA_STORE_ID": "store-id",
+            "OPENFGA_API_TOKEN": "token",
+            "OPENFGA_API_SCHEME": "http",
+            "OPENFGA_API_HOST": "openfga.local:8080",
+        }
+        assert data.to_env_vars() == expected
+
+
+class TestOpenFGAIntegration:
+    @pytest.fixture(autouse=True)
+    def mocked_openfga_integration(self) -> None:
+        """Override the autouse fixture from conftest.py to do nothing."""
+        pass
+
+    @pytest.fixture
+    def mocked_requirer(self) -> MagicMock:
+        return create_autospec(OpenFGARequires)
+
+    def test_is_store_ready_true(self, mocked_requirer: MagicMock) -> None:
+        mocked_requirer.get_store_info.return_value = OpenfgaProviderAppData(
+            store_id="store-id",
+            token="token",
+            http_api_url="http://url",
+            grpc_api_url="grpc://url",
+        )
+        integration = OpenFGAIntegration(mocked_requirer)
+        assert integration.is_store_ready()
+
+    def test_is_store_ready_false_no_info(self, mocked_requirer: MagicMock) -> None:
+        mocked_requirer.get_store_info.return_value = None
+        integration = OpenFGAIntegration(mocked_requirer)
+        assert not integration.is_store_ready()
+
+    def test_is_store_ready_false_no_id(self, mocked_requirer: MagicMock) -> None:
+        mocked_requirer.get_store_info.return_value = OpenfgaProviderAppData(
+            store_id=None,
+            token="token",
+            http_api_url="http://url",
+            grpc_api_url="grpc://url",
+        )
+        integration = OpenFGAIntegration(mocked_requirer)
+        assert not integration.is_store_ready()
+
+    def test_openfga_integration_data(self, mocked_requirer: MagicMock) -> None:
+        mocked_requirer.get_store_info.return_value = OpenfgaProviderAppData(
+            store_id="store-id",
+            token="token",
+            http_api_url="http://url",
+            grpc_api_url="grpc://url",
+        )
+        integration = OpenFGAIntegration(mocked_requirer)
+        data = integration.openfga_integration_data
+
+        assert data.store_id == "store-id"
+        assert data.api_token == "token"
+        assert data.url == "http://url"
+
+    def test_openfga_integration_data_empty(self, mocked_requirer: MagicMock) -> None:
+        mocked_requirer.get_store_info.return_value = None
+        integration = OpenFGAIntegration(mocked_requirer)
+        data = integration.openfga_integration_data
+
+        assert data == OpenFGAIntegrationData()

@@ -19,6 +19,7 @@ from constants import (
 )
 from env_vars import DEFAULT_CONTAINER_ENV, EnvVarConvertible
 from exceptions import PebbleError
+from integrations import OpenFGAIntegrationData
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,15 @@ class WorkloadService:
     def open_port(self) -> None:
         """Open the service ports."""
         self._unit.open_port(protocol="tcp", port=PORT)
+
+    def create_openfga_model(self, openfga_data: OpenFGAIntegrationData) -> str:
+        model_id = self._cli.create_openfga_model(
+            openfga_data.url,
+            openfga_data.api_token,
+            openfga_data.store_id,
+        )
+
+        return model_id or ""
 
 
 class PebbleService:
