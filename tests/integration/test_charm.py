@@ -14,6 +14,8 @@ from integration.constants import (
     DB_CHARM,
     INGRESS_DOMAIN,
     METADATA,
+    OPENFGA_APP,
+    OPENFGA_CHARM,
     TRAEFIK_APP,
     TRAEFIK_CHARM,
 )
@@ -61,12 +63,21 @@ def test_build_and_deploy(
         trust=True,
     )
 
+    model.deploy(
+        OPENFGA_CHARM,
+        app=OPENFGA_APP,
+        channel="latest/edge",
+        trust=True,
+    )
+
     model.integrate(TRAEFIK_APP, APP_NAME)
     model.integrate(DB_APP, APP_NAME)
+    model.integrate(DB_APP, OPENFGA_APP)
+    model.integrate(OPENFGA_APP, APP_NAME)
 
     wait_for_active_idle(
         model,
-        apps=[TRAEFIK_APP, DB_APP, APP_NAME],
+        apps=[TRAEFIK_APP, DB_APP, OPENFGA_APP, APP_NAME],
         timeout=1000,
     )
 

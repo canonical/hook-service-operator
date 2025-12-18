@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 from constants import (
     DATABASE_INTEGRATION_NAME,
+    OPENFGA_INTEGRATION_NAME,
+    OPENFGA_MODEL_ID,
+    PEER_INTEGRATION_NAME,
     WORKLOAD_CONTAINER,
 )
 from exceptions import MigrationCheckError
@@ -68,10 +71,28 @@ def migration_is_ready(charm: "HookServiceOperatorCharm") -> bool:
         return False
 
 
+peer_integration_exists = integration_existence(PEER_INTEGRATION_NAME)
+openfga_integration_exists = integration_existence(OPENFGA_INTEGRATION_NAME)
+
+
+def openfga_store_readiness(charm: "HookServiceOperatorCharm") -> bool:
+    return charm.openfga_integration.is_store_ready()
+
+
+def openfga_model_readiness(charm: "HookServiceOperatorCharm") -> bool:
+    version = charm._workload_service.version
+
+    if not (openfga_model := charm.peer_data[version]):
+        return False
+
+    return bool(openfga_model.get(OPENFGA_MODEL_ID))
+
+
 # Condition failure causes early return without doing anything
 NOOP_CONDITIONS: tuple[Condition, ...] = (
     container_connectivity,
     database_integration_exists,
     database_resource_is_created,
     config_readiness,
+    openfga_integration_exists,
 )

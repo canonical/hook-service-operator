@@ -23,6 +23,11 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     ResourceRequirements,
     adjust_resource_requirements,
 )
+from charms.openfga_k8s.v1.openfga import (
+    OpenFGARequires,
+    OpenFGAStoreCreateEvent,
+    OpenFGAStoreRemovedEvent,
+)
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
@@ -36,6 +41,9 @@ from constants import (
     GRAFANA_DASHBOARD_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
     LOGGING_INTEGRATION_NAME,
+    OPENFGA_INTEGRATION_NAME,
+    OPENFGA_MODEL_ID,
+    OPENFGA_STORE_NAME,
     PEBBLE_READY_CHECK_NAME,
     PORT,
     PROMETHEUS_SCRAPE_INTEGRATION_NAME,
@@ -43,7 +51,15 @@ from constants import (
     WORKLOAD_CONTAINER,
 )
 from exceptions import CharmError, MigrationCheckError, MigrationError, PebbleError
-from integrations import DatabaseConfig, HydraHookIntegration, InternalIngressData, TracingData
+from integrations import (
+    DatabaseConfig,
+    HydraHookIntegration,
+    InternalIngressData,
+    OpenFGAIntegration,
+    OpenFGAModelData,
+    PeerData,
+    TracingData,
+)
 from secret import Secrets
 from services import PebbleService, WorkloadService
 from utils import (
@@ -52,6 +68,8 @@ from utils import (
     database_integration_exists,
     database_resource_is_created,
     migration_is_ready,
+    openfga_integration_exists,
+    peer_integration_exists,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,6 +83,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         self._container = self.unit.get_container(WORKLOAD_CONTAINER)
         self._cli = CommandLine(self._container)
+        self.peer_data = PeerData(self.model)
         self._workload_service = WorkloadService(self.unit)
         self._pebble_service = PebbleService(self.unit)
         self._secrets = Secrets(self.model)
@@ -72,6 +91,11 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         self.hydra_token_hook = HydraHookProvider(self)
         self.hydra_token_hook_integration = HydraHookIntegration(self.hydra_token_hook)
+
+        self.openfga_requirer = OpenFGARequires(
+            self, store_name=OPENFGA_STORE_NAME, relation_name=OPENFGA_INTEGRATION_NAME
+        )
+        self.openfga_integration = OpenFGAIntegration(self.openfga_requirer)
 
         self.database_requirer = DatabaseRequires(
             self,
@@ -167,6 +191,15 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._on_internal_route_changed,
         )
 
+        self.framework.observe(
+            self.openfga_requirer.on.openfga_store_created,
+            self._on_openfga_store_created,
+        )
+        self.framework.observe(
+            self.openfga_requirer.on.openfga_store_removed,
+            self._on_openfga_store_removed,
+        )
+
     @property
     def _pebble_layer(self) -> ops.pebble.Layer:
         return self._pebble_service.render_pebble_layer(
@@ -174,6 +207,8 @@ class HookServiceOperatorCharm(ops.CharmBase):
             DatabaseConfig.load(self.database_requirer),
             self._secrets,
             self._config,
+            OpenFGAModelData.load(self.peer_data[self._workload_service.version]),
+            self.openfga_integration.openfga_integration_data,
         )
 
     @property
@@ -239,6 +274,31 @@ class HookServiceOperatorCharm(ops.CharmBase):
             return False
         return True
 
+    def _ensure_openfga_model(self) -> bool:
+        if not self.openfga_integration.is_store_ready():
+            return False
+
+        if not peer_integration_exists(self):
+            return False
+
+        if self.peer_data[self._workload_service.version].get(OPENFGA_MODEL_ID):
+            return True
+
+        if self.unit.is_leader():
+            try:
+                openfga_model_id = self._workload_service.create_openfga_model(
+                    self.openfga_integration.openfga_integration_data
+                )
+                self.peer_data[self._workload_service.version] = {
+                    OPENFGA_MODEL_ID: openfga_model_id
+                }
+                return True
+            except Exception:
+                logger.exception("Failed to create OpenFGA model")
+                return False
+
+        return False
+
     def _on_internal_route_changed(self, event: ops.RelationEvent) -> None:
         # needed due to how traefik_route lib is handling the event
         self.internal_ingress._relation = event.relation
@@ -266,6 +326,15 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self._holistic_handler(event)
 
     def _on_database_integration_broken(self, event: ops.RelationBrokenEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_openfga_store_created(self, event: OpenFGAStoreCreateEvent) -> None:
+        self._holistic_handler(event)
+
+    def _on_openfga_store_removed(self, event: OpenFGAStoreRemovedEvent) -> None:
+        if self.unit.is_leader():
+            self.peer_data.pop(key=self._workload_service.version)
+
         self._holistic_handler(event)
 
     def _on_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
@@ -296,6 +365,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._ensure_hydra_relation,
             self._ensure_internal_ingress,
             self._ensure_database_migration,
+            self._ensure_openfga_model,
         ]:
             try:
                 can_plan = can_plan and f()
@@ -348,6 +418,12 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         if not database_resource_is_created(self):
             event.add_status(ops.WaitingStatus("Waiting for database creation"))
+
+        if not openfga_integration_exists(self):
+            event.add_status(ops.BlockedStatus(f"Missing integration {OPENFGA_INTEGRATION_NAME}"))
+
+        if not self.openfga_integration.is_store_ready():
+            event.add_status(ops.WaitingStatus("Waiting for openfga store to be created"))
 
         if migration_status := self._get_migration_status():
             event.add_status(migration_status)

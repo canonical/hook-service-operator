@@ -11,6 +11,7 @@ output "requires" {
   value = {
     logging        = "logging"
     tracing        = "tracing"
+    openfga        = "openfga"
     pg-database    = "pg-database"
     internal-route = "internal-route"
   }

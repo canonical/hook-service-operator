@@ -50,6 +50,34 @@ class CommandLine:
         matched = VERSION_REGEX.search(stdout)
         return matched.group("version") if matched else None
 
+    def create_openfga_model(
+        self,
+        url: str,
+        api_token: str,
+        store_id: str,
+    ) -> Optional[str]:
+        cmd = [
+            "hook-service",
+            "create-fga-model",
+            "--fga-api-url",
+            url,
+            "--fga-api-token",
+            api_token,
+            "--fga-store-id",
+            store_id,
+            "--format",
+            "json",
+        ]
+
+        try:
+            stdout, _ = self._run_cmd(cmd)
+        except Error as err:
+            logger.error("Failed to create the OpenFGA model: %s", err)
+            return None
+
+        out = json.loads(stdout)
+        return out.get("model_id")
+
     def migrate_up(self, dsn: str, timeout: float = 120) -> None:
         """Migrate the service up using the provided DSN.
 

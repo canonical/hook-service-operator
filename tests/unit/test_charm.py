@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from ops import StatusBase, testing
 
-from constants import WORKLOAD_CONTAINER
+from constants import OPENFGA_INTEGRATION_NAME, WORKLOAD_CONTAINER
 from exceptions import MigrationCheckError, MigrationError
 
 
@@ -131,7 +131,6 @@ class TestHolisticHandler:
         state_in = replace_state(
             base_state,
             relations=[internal_route_integration] + list(base_state.relations),
-            leader=True,
         )
 
         # We abuse the config_changed event, to run the unit tests on holistic_handler.
@@ -156,7 +155,12 @@ class TestHolisticHandler:
             "SALESFORCE_CONSUMER_SECRET": salesforce_consumer_secret.tracked_content[
                 "consumer-secret"
             ],
-            "DSN": f"postgres://username:password@postgres-k8s-primary.namespace.svc.cluster.local:5432/{state_out.model.name}_hook-service",
+            "OPENFGA_API_HOST": "",
+            "OPENFGA_API_SCHEME": "",
+            "OPENFGA_API_TOKEN": "",
+            "OPENFGA_AUTHORIZATION_MODEL_ID": "",
+            "OPENFGA_STORE_ID": "",
+            "DSN": "postgres://username:password@postgres-k8s-primary.namespace.svc.cluster.local:5432/test-model_hook-service",
         }
 
     def test_migration_needed_not_leader(
@@ -180,9 +184,8 @@ class TestHolisticHandler:
         mocked_cli: MagicMock,
     ) -> None:
         mocked_cli.return_value.migration_check.return_value = False
-        state_in = replace_state(base_state, leader=True)
 
-        context.run(context.on.config_changed(), state_in)
+        context.run(context.on.config_changed(), base_state)
 
         mocked_cli.return_value.migrate_up.assert_called_once()
 
@@ -195,9 +198,7 @@ class TestHolisticHandler:
         mocked_cli.return_value.migration_check.return_value = False
         mocked_cli.return_value.migrate_up.side_effect = MigrationError("failed")
 
-        state_in = replace_state(base_state, leader=True)
-
-        context.run(context.on.config_changed(), state_in)
+        context.run(context.on.config_changed(), base_state)
 
         mocked_cli.return_value.migrate_up.assert_called_once()
 
@@ -209,7 +210,7 @@ class TestHolisticHandler:
     ) -> None:
         mocked_cli.return_value.migration_check.side_effect = MigrationCheckError("failed")
 
-        state_in = replace_state(base_state, leader=True, relations=[])
+        state_in = replace_state(base_state, relations=[])
 
         context.run(context.on.config_changed(), state_in)
 
@@ -272,6 +273,20 @@ class TestCollectStatusEvent:
                 "Waiting for leader unit to run the migration",
                 False,
             ),
+            (
+                "openfga_integration_exists",
+                False,
+                testing.BlockedStatus,
+                f"Missing integration {OPENFGA_INTEGRATION_NAME}",
+                True,
+            ),
+            (
+                "OpenFGAIntegration.is_store_ready",
+                False,
+                testing.WaitingStatus,
+                "Waiting for openfga store to be created",
+                True,
+            ),
         ],
         ids=[
             "container_not_connected",
@@ -280,6 +295,8 @@ class TestCollectStatusEvent:
             "migration_check_error",
             "migration_not_ready",
             "not_leader_waiting_for_migration",
+            "openfga_integration_missing",
+            "openfga_store_not_ready",
         ],
     )
     def test_when_a_condition_failed(
@@ -330,3 +347,44 @@ class TestDatabaseEvents:
         context.run(context.on.relation_broken(database_relation), base_state)
 
         mocked_charm_holistic_handler.assert_called_once()
+
+
+class TestOpenFGAEvents:
+    def test_on_openfga_store_created(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_charm_holistic_handler: MagicMock,
+        openfga_relation: testing.Relation,
+    ) -> None:
+        context.run(context.on.relation_changed(openfga_relation), base_state)
+
+        mocked_charm_holistic_handler.assert_called_once()
+
+    def test_on_openfga_store_removed(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_charm_holistic_handler: MagicMock,
+        openfga_relation: testing.Relation,
+    ) -> None:
+        context.run(context.on.relation_departed(openfga_relation), base_state)
+
+        mocked_charm_holistic_handler.assert_called_once()
+
+    def test_on_openfga_store_removed_leader(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_charm_holistic_handler: MagicMock,
+        openfga_relation: testing.Relation,
+        peer_relation: testing.Relation,
+        mocked_workload_service_version: MagicMock,
+    ) -> None:
+        version = mocked_workload_service_version.return_value
+
+        state_out = context.run(context.on.relation_departed(openfga_relation), base_state)
+
+        mocked_charm_holistic_handler.assert_called_once()
+        peer_rel_out = state_out.get_relation(peer_relation.id)
+        assert version not in peer_rel_out.local_app_data

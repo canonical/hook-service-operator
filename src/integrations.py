@@ -6,7 +6,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
@@ -15,14 +15,18 @@ from charms.hydra.v0.hydra_token_hook import (
     HydraHookProvider,
     ProviderData,
 )
+from charms.openfga_k8s.v1.openfga import OpenFGARequires
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from jinja2 import Template
+from ops.model import Model
 from pydantic import AnyHttpUrl
 
 from constants import (
     HYDRA_TOKEN_HOOK_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
+    OPENFGA_MODEL_ID,
+    PEER_INTEGRATION_NAME,
     PORT,
     POSTGRESQL_DSN_TEMPLATE,
 )
@@ -171,3 +175,95 @@ class DatabaseConfig:
             username=integration_data.get("username", ""),
             password=integration_data.get("password", ""),
         )
+
+
+@dataclass(frozen=True)
+class OpenFGAModelData:
+    """The data source of the OpenFGA model."""
+
+    model_id: str = ""
+
+    def to_env_vars(self) -> EnvVars:
+        return {
+            "OPENFGA_AUTHORIZATION_MODEL_ID": self.model_id,
+        }
+
+    @classmethod
+    def load(cls, source: dict) -> "OpenFGAModelData":
+        return OpenFGAModelData(
+            model_id=source.get(OPENFGA_MODEL_ID, ""),
+        )
+
+
+@dataclass(frozen=True)
+class OpenFGAIntegrationData:
+    """The data source from the OpenFGA integration."""
+
+    url: str = ""
+    api_token: str = ""
+    store_id: str = ""
+
+    @property
+    def api_scheme(self) -> str:
+        return urlparse(self.url).scheme
+
+    @property
+    def api_host(self) -> str:
+        return urlparse(self.url).netloc
+
+    def to_env_vars(self) -> EnvVars:
+        return {
+            "OPENFGA_STORE_ID": self.store_id,
+            "OPENFGA_API_TOKEN": self.api_token,
+            "OPENFGA_API_SCHEME": self.api_scheme,
+            "OPENFGA_API_HOST": self.api_host,
+        }
+
+
+class OpenFGAIntegration:
+    def __init__(self, integration_requirer: "OpenFGARequires") -> None:
+        self._openfga_requirer = integration_requirer
+
+    def is_store_ready(self) -> bool:
+        provider_data = self._openfga_requirer.get_store_info()
+        return provider_data is not None and provider_data.store_id is not None
+
+    @property
+    def openfga_integration_data(self) -> OpenFGAIntegrationData:
+        if not (provider_data := self._openfga_requirer.get_store_info()):
+            return OpenFGAIntegrationData()
+
+        if not provider_data.store_id or not provider_data.token:
+            return OpenFGAIntegrationData()
+
+        return OpenFGAIntegrationData(
+            url=provider_data.http_api_url,
+            api_token=provider_data.token,
+            store_id=provider_data.store_id,
+        )
+
+
+class PeerData:
+    def __init__(self, model: "Model") -> None:
+        self._model = model
+        self._app = model.app
+
+    def __getitem__(self, key: str) -> dict[str, str] | str:
+        if not (peers := self._model.get_relation(PEER_INTEGRATION_NAME)):
+            return {}
+
+        value = peers.data[self._app].get(key)
+        return json.loads(value) if value else {}
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if not (peers := self._model.get_relation(PEER_INTEGRATION_NAME)):
+            return
+
+        peers.data[self._app][key] = json.dumps(value)
+
+    def pop(self, key: str) -> dict[str, str] | str:
+        if not (peers := self._model.get_relation(PEER_INTEGRATION_NAME)):
+            return {}
+
+        data = peers.data[self._app].pop(key, None)
+        return json.loads(data) if data else {}
