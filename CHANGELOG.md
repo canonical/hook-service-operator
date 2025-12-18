@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5](https://github.com/canonical/hook-service-operator/compare/v1.0.4...v1.0.5) (2025-12-18)
+
+
+### Bug Fixes
+
+* add openfga integration ([cb66e99](https://github.com/canonical/hook-service-operator/commit/cb66e99b3df4b66729a3dad441fbdede8504ea68))
+* fix status calculation ([556687d](https://github.com/canonical/hook-service-operator/commit/556687d6a7f862e0d7dd87ae45c14883e26ec8cb))
+
 ## [1.0.4](https://github.com/canonical/hook-service-operator/compare/v1.0.3...v1.0.4) (2025-12-12)
 
 
