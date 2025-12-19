@@ -47,6 +47,13 @@ juju config hook-service \
   salesforce_consumer_secret=salesforce-consumer
 ```
 
+The charm also requires integration with a PostgreSQL database and OpenFGA:
+
+```console
+juju integrate hook-service:pg-database postgresql-k8s
+juju integrate hook-service:openfga openfga-k8s
+```
+
 Now you can integrate the charm with the identity-platform:
 
 ```console
@@ -54,6 +61,46 @@ juju integrate hook-service:hydra-token-hook hydra
 ```
 
 Once the charms reach an active state, any users that try to log in to the identity-platform will have groups in their access tokens pulled from salesforce.
+
+### Managing Groups and Access
+
+Once the charm is active and integrated, you can manage groups and access using the API.
+
+First, set up the necessary environment variables:
+
+```bash
+# set the client ID
+export CLIENT_ID="<client-id>"
+# the hook service unit IP
+export HOOK_SERVICE_HOST="<hook-service-ip>:8000"
+export USER_EMAIL="my.email@example.com"
+export GROUP_NAME="my group name"
+export GROUP_DESCRIPTION="something"
+```
+
+Create a group:
+
+```bash
+export GROUP_ID=$(curl -s -XPOST "http://${HOOK_SERVICE_HOST}/api/v0/authz/groups" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\": \"$GROUP_NAME\", \"description\": \"$GROUP_DESCRIPTION\", \"type\": \"local\"}" | yq .data[0].id)
+```
+
+Add a user to the group:
+
+```bash
+curl -s -XPOST "http://${HOOK_SERVICE_HOST}/api/v0/authz/groups/${GROUP_ID}/users" \
+  -H "Content-Type: application/json" \
+  -d "[\"${USER_EMAIL}\"]"
+```
+
+Grant the group access to an application:
+
+```bash
+curl -s -XPOST "http://${HOOK_SERVICE_HOST}/api/v0/authz/groups/${GROUP_ID}/apps" \
+  -H "Content-Type: application/json" \
+  -d "{\"client_id\": \"$CLIENT_ID\"}"
+```
 
 ## Security
 
