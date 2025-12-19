@@ -124,9 +124,11 @@ def salesforce_consumer_secret(salesforce_consumer_info: dict[str, str]) -> test
 
 @pytest.fixture()
 def mocked_secrets(
-    api_token_secret: testing.Secret, salesforce_consumer_secret: testing.Secret
+    api_token_secret: testing.Secret,
+    salesforce_consumer_secret: testing.Secret,
+    openfga_secret: testing.Secret,
 ) -> list[testing.Secret]:
-    return [api_token_secret, salesforce_consumer_secret]
+    return [api_token_secret, salesforce_consumer_secret, openfga_secret]
 
 
 @pytest.fixture
@@ -199,8 +201,17 @@ def database_relation(database_relation_data: dict) -> testing.Relation:
 
 
 @pytest.fixture
-def openfga_relation_data() -> dict:
+def openfga_secret() -> testing.Secret:
+    return testing.Secret(
+        tracked_content={"token": "token"},
+        owner=None,
+    )
+
+
+@pytest.fixture
+def openfga_relation_data(openfga_secret: testing.Secret) -> dict:
     return {
+        "token_secret_id": openfga_secret.id,
         "store_id": "some-store-id",
         "grpc_api_url": "http://openfga:8081",
         "http_api_url": "http://openfga:8080",
@@ -262,11 +273,16 @@ def version_check_exec() -> Exec:
 
 
 @pytest.fixture
-def create_fga_model_exec() -> Exec:
+def openfga_model_id() -> str:
+    return "01HT27W9Y00000000000000000"
+
+
+@pytest.fixture
+def create_fga_model_exec(openfga_model_id: str) -> Exec:
     return Exec(
         command_prefix=["hook-service", "create-fga-model"],
         return_code=0,
-        stdout='{"id": "01HT27W9Y00000000000000000"}',
+        stdout=f'{{"model_id": "{openfga_model_id}"}}',
     )
 
 

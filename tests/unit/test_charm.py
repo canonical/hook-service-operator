@@ -127,6 +127,8 @@ class TestHolisticHandler:
         api_token: str,
         salesforce_domain: str,
         salesforce_consumer_secret: testing.Secret,
+        openfga_secret: testing.Secret,
+        openfga_model_id: str,
     ) -> None:
         state_in = replace_state(
             base_state,
@@ -155,11 +157,12 @@ class TestHolisticHandler:
             "SALESFORCE_CONSUMER_SECRET": salesforce_consumer_secret.tracked_content[
                 "consumer-secret"
             ],
-            "OPENFGA_API_HOST": "",
-            "OPENFGA_API_SCHEME": "",
-            "OPENFGA_API_TOKEN": "",
-            "OPENFGA_AUTHORIZATION_MODEL_ID": "",
-            "OPENFGA_STORE_ID": "",
+            "AUTHORIZATION_ENABLED": True,
+            "OPENFGA_API_HOST": "openfga:8080",
+            "OPENFGA_API_SCHEME": "http",
+            "OPENFGA_API_TOKEN": openfga_secret.tracked_content["token"],
+            "OPENFGA_AUTHORIZATION_MODEL_ID": openfga_model_id,
+            "OPENFGA_STORE_ID": "some-store-id",
             "DSN": "postgres://username:password@postgres-k8s-primary.namespace.svc.cluster.local:5432/test-model_hook-service",
         }
 
