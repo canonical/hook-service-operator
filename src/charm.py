@@ -50,7 +50,13 @@ from constants import (
     TEMPO_TRACING_INTEGRATION_NAME,
     WORKLOAD_CONTAINER,
 )
-from exceptions import CharmError, MigrationCheckError, MigrationError, PebbleError
+from exceptions import (
+    CharmError,
+    CreateFgaStoreError,
+    MigrationCheckError,
+    MigrationError,
+    PebbleError,
+)
 from integrations import (
     DatabaseConfig,
     HydraHookIntegration,
@@ -284,20 +290,19 @@ class HookServiceOperatorCharm(ops.CharmBase):
         if self.peer_data[self._workload_service.version].get(OPENFGA_MODEL_ID):
             return True
 
-        if self.unit.is_leader():
-            try:
-                openfga_model_id = self._workload_service.create_openfga_model(
-                    self.openfga_integration.openfga_integration_data
-                )
-                self.peer_data[self._workload_service.version] = {
-                    OPENFGA_MODEL_ID: openfga_model_id
-                }
-                return True
-            except Exception:
-                logger.exception("Failed to create OpenFGA model")
-                return False
+        if not self.unit.is_leader():
+            return False
 
-        return False
+        try:
+            openfga_model_id = self._workload_service.create_openfga_model(
+                self.openfga_integration.openfga_integration_data
+            )
+        except CreateFgaStoreError:
+            logger.exception("Failed to create OpenFGA model")
+            return False
+
+        self.peer_data[self._workload_service.version] = {OPENFGA_MODEL_ID: openfga_model_id}
+        return True
 
     def _on_internal_route_changed(self, event: ops.RelationEvent) -> None:
         # needed due to how traefik_route lib is handling the event

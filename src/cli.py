@@ -14,7 +14,7 @@ from ops.pebble import Error, ExecError
 
 from constants import WORKLOAD_SERVICE
 from env_vars import EnvVars
-from exceptions import MigrationCheckError, MigrationError
+from exceptions import CreateFgaStoreError, MigrationCheckError, MigrationError
 
 VERSION_REGEX = re.compile(r"App Version:\s*(?P<version>\S+)\s*$")
 
@@ -73,7 +73,7 @@ class CommandLine:
             stdout, _ = self._run_cmd(cmd)
         except Error as err:
             logger.error("Failed to create the OpenFGA model: %s", err)
-            return None
+            raise CreateFgaStoreError from err
 
         out = json.loads(stdout)
         return out.get("model_id")
