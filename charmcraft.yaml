@@ -96,6 +96,12 @@ requires:
     limit: 1
     description: |
       Receive OpenFGA server's url and store information.
+  receive-ca-cert:
+    interface: certificate_transfer
+    description: |
+      Receive a CA cert.
+      This relation can be used with a local CA to obtain the CA cert that was used to sign proxied
+      endpoints.
 
 provides:
   metrics-endpoint:
@@ -127,7 +133,7 @@ resources:
   oci-image:
     type: oci-image
     description: OCI image for hook-service
-    upstream-source: ghcr.io/canonical/hook-service:v1.0.4
+    upstream-source: ghcr.io/canonical/hook-service:v1.1.2
 
 parts:
   charm:

@@ -5,10 +5,14 @@
 """A Juju charm for Identity Platform Hook Service."""
 
 import logging
+import subprocess
 from os.path import join
 from secrets import token_hex
 
 import ops
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferRequires,
+)
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -33,13 +37,18 @@ from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 
 from cli import CommandLine
+from clients import HTTPClient
 from configs import CharmConfig
 from constants import (
     API_TOKEN_SECRET_KEY,
     API_TOKEN_SECRET_LABEL,
+    CERTIFICATE_TRANSFER_INTEGRATION_NAME,
     DATABASE_INTEGRATION_NAME,
     GRAFANA_DASHBOARD_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
+    LOCAL_CERTIFICATES_PATH,
+    LOCAL_CHARM_CERTIFICATES_FILE,
+    LOCAL_CHARM_CERTIFICATES_PATH,
     LOGGING_INTEGRATION_NAME,
     OPENFGA_INTEGRATION_NAME,
     OPENFGA_MODEL_ID,
@@ -64,6 +73,7 @@ from integrations import (
     OpenFGAIntegration,
     OpenFGAModelData,
     PeerData,
+    TLSCertificates,
     TracingData,
 )
 from secret import Secrets
@@ -138,6 +148,11 @@ class HookServiceOperatorCharm(ops.CharmBase):
             resource_reqs_func=self._resource_reqs_from_config,
         )
 
+        self.certificate_transfer_requirer = CertificateTransferRequires(
+            self,
+            relationship_name=CERTIFICATE_TRANSFER_INTEGRATION_NAME,
+        )
+
         self.framework.observe(self.on.hook_service_pebble_ready, self._on_pebble_ready)
         self.framework.observe(
             self.on.hook_service_pebble_check_failed, self._on_pebble_check_failed
@@ -153,6 +168,26 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         # Hydra token hook relation
         self.framework.observe(self.hydra_token_hook.on.ready, self._on_hydra_hook_ready)
+
+        # Oauth relation
+        self.framework.observe(
+            self.oauth_requirer.on.oauth_info_changed,
+            self._on_oauth_info_changed,
+        )
+        self.framework.observe(
+            self.oauth_requirer.on.oauth_info_removed,
+            self._on_oauth_info_changed,
+        )
+
+        # Certificate transfer relation
+        self.framework.observe(
+            self.certificate_transfer_requirer.on.certificate_set_updated,
+            self._on_certificate_transfer_changed,
+        )
+        self.framework.observe(
+            self.certificate_transfer_requirer.on.certificates_removed,
+            self._on_certificate_transfer_changed,
+        )
 
         # COS relations
         self._log_forwarder = LogForwarder(self, relation_name=LOGGING_INTEGRATION_NAME)
@@ -304,6 +339,25 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.peer_data[self._workload_service.version] = {OPENFGA_MODEL_ID: openfga_model_id}
         return True
 
+    def _ensure_tls(self) -> bool:
+        LOCAL_CHARM_CERTIFICATES_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        if certificates := TLSCertificates.load(self.certificate_transfer_requirer).ca_bundle:
+            LOCAL_CHARM_CERTIFICATES_FILE.write_text(certificates)
+        elif LOCAL_CHARM_CERTIFICATES_FILE.exists():
+            LOCAL_CHARM_CERTIFICATES_FILE.unlink()
+
+        subprocess.run([
+            "update-ca-certificates",
+            "--fresh",
+            "--etccertsdir",
+            LOCAL_CERTIFICATES_PATH,
+            "--localcertsdir",
+            LOCAL_CHARM_CERTIFICATES_PATH,
+        ])
+        self._workload_service.update_ca_certs()
+        return True
+
     def _on_internal_route_changed(self, event: ops.RelationEvent) -> None:
         # needed due to how traefik_route lib is handling the event
         self.internal_ingress._relation = event.relation
@@ -342,6 +396,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         self._holistic_handler(event)
 
+    def _on_certificate_transfer_changed(self, event: ops.EventBase) -> None:
+        self._holistic_handler(event)
+
     def _on_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
         self._workload_service.open_port()
         self._holistic_handler(event)
@@ -371,6 +428,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._ensure_internal_ingress,
             self._ensure_database_migration,
             self._ensure_openfga_model,
+            self._ensure_tls,
         ]:
             try:
                 can_plan = can_plan and f()

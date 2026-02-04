@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferRequires,
+)
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.hydra.v0.hydra_token_hook import (
     AuthIn,
@@ -23,6 +26,7 @@ from ops.model import Model
 from pydantic import AnyHttpUrl
 
 from constants import (
+    CERTIFICATE_TRANSFER_INTEGRATION_NAME,
     HYDRA_TOKEN_HOOK_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
     OPENFGA_MODEL_ID,
@@ -269,3 +273,34 @@ class PeerData:
 
         data = peers.data[self._app].pop(key, None)
         return json.loads(data) if data else {}
+
+
+@dataclass(frozen=True)
+class TLSCertificates:
+    ca_bundle: str
+
+    @classmethod
+    def load(cls, requirer: CertificateTransferRequires) -> "TLSCertificates":
+        """Fetch the CA certificates from all "receive-ca-cert" integrations.
+
+        Compose the trusted CA certificates in /etc/ssl/certs/ca-certificates.crt.
+        """
+        # deal with v1 relations
+        ca_certs = requirer.get_all_certificates()
+
+        # deal with v0 relations
+        cert_transfer_integrations = requirer.charm.model.relations[
+            CERTIFICATE_TRANSFER_INTEGRATION_NAME
+        ]
+
+        for integration in cert_transfer_integrations:
+            ca = {
+                integration.data[unit]["ca"]
+                for unit in integration.units
+                if "ca" in integration.data.get(unit, {})
+            }
+            ca_certs.update(ca)
+
+        ca_bundle = "\n".join(sorted(ca_certs))
+
+        return cls(ca_bundle=ca_bundle)

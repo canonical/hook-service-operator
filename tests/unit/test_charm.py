@@ -41,7 +41,6 @@ class TestPebbleReadyEvent:
         mocked_charm_holistic_handler.assert_called_once()
         assert state_out.workload_version == mocked_workload_service_version.return_value
 
-
 class TestConfigChangedEvent:
     def test_when_config_missing(
         self,
@@ -391,3 +390,29 @@ class TestOpenFGAEvents:
         mocked_charm_holistic_handler.assert_called_once()
         peer_rel_out = state_out.get_relation(peer_relation.id)
         assert version not in peer_rel_out.local_app_data
+
+class TestCertificateEvents:
+    def test_on_certificate_changed(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        certificate_transfer_relation: testing.Relation,
+        mocked_subprocess_run: MagicMock,
+        mocker: MagicMock,  # To mock path operations
+    ) -> None:
+        # Mock Path operations to avoid filesystem access
+        mock_path = mocker.patch("charm.LOCAL_CHARM_CERTIFICATES_FILE")
+        mock_path.exists.return_value = False
+
+        # Mock parent directory creation
+        mock_path.parent.mkdir.return_value = None
+
+        state_in = replace_state(
+            base_state,
+            relations=[certificate_transfer_relation] + list(base_state.relations),
+        )
+
+        context.run(context.on.relation_changed(certificate_transfer_relation), state_in)
+
+        mock_path.write_text.assert_called_with("some-ca-cert")
+        mocked_subprocess_run.assert_called()

@@ -11,6 +11,7 @@ from ops.testing import Exec, Model
 from pytest_mock import MockerFixture
 
 from charm import HookServiceOperatorCharm
+from constants import WORKLOAD_CONTAINER
 
 
 @pytest.fixture(autouse=True)
@@ -357,3 +358,24 @@ def mocked_secrets_is_ready(mocker: MockerFixture) -> MagicMock:
 @pytest.fixture
 def mocked_get_missing_config_keys(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
+
+
+@pytest.fixture
+def certificate_transfer_relation() -> testing.Relation:
+    return testing.Relation(
+        endpoint="receive-ca-cert",
+        interface="certificate_transfer",
+        remote_app_name="cert-authority",
+        remote_units_data={
+            0: {
+                "ca": "some-ca-cert",
+                "certificate": "some-cert",
+                "chain": "some-chain",
+            }
+        },
+    )
+
+
+@pytest.fixture(autouse=True)
+def mocked_subprocess_run(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("subprocess.run")
