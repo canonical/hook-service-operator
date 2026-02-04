@@ -69,6 +69,38 @@ config:
         Whether the salesforce integration is enabled.
       type: boolean
       default: true
+    authn_allowed_subjects:
+      description: |
+        Comma separated list of allowed subject IDs that are allowed to access the Group/Authz management APIs.
+      type: string
+      default: ''
+    authn_allowed_scope:
+      description: |
+        The allowed OAuth2 scopes that are allowed to access the Group/Authz management APIs.
+      type: string
+      default: ''
+    authn_issuer:
+      description: |
+        The expected issuer of incoming tokens to the Group/Authz management APIs.
+
+        This configuration cannot be used with when the oauth integration exists.
+      type: string
+      default: ''
+    authn_jwks_url:
+      description: |
+        The URL to fetch JWKS keys for validating incoming tokens to the Group/Authz management APIs.
+
+        This configuration cannot be used with when the oauth integration exists.
+      type: string
+      default: ''
+
+actions:
+  get-access-token:
+    description: |
+      Generate a JWT token for accessing the Group/Authz management APIs.
+
+      This action requires the oauth integration to be established and ready.
+
 
 requires:
   logging:
@@ -96,6 +128,12 @@ requires:
     limit: 1
     description: |
       Receive OpenFGA server's url and store information.
+  oauth:
+    interface: oauth
+    limit: 1
+    description: |
+      Receive oauth server's info and a set of client credentials.
+      This integration can be used to integrate the service with an OAuth2/OIDC Provider.
   receive-ca-cert:
     interface: certificate_transfer
     description: |
@@ -138,6 +176,7 @@ resources:
 parts:
   charm:
     charm-binary-python-packages:
+      - jsonschema
       - "pydantic>=2"
       - "setuptools>=70.0.0"
     build-packages:

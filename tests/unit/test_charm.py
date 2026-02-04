@@ -41,6 +41,82 @@ class TestPebbleReadyEvent:
         mocked_charm_holistic_handler.assert_called_once()
         assert state_out.workload_version == mocked_workload_service_version.return_value
 
+
+class TestAuthn:
+    def test_when_oauth_relation_exists(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+    ) -> None:
+        """Test that correct env vars are set when OAuth relation exists."""
+        config = {
+            "authn_allowed_subjects": "user1, user2",
+            "authn_allowed_scope": "email",
+        }
+
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+
+        state_in = replace_state(
+            base_state,
+            relations=[oauth_relation] + list(base_state.relations),
+            config={**base_state.config, **config},
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+        state_out = context.run(
+            context.on.pebble_ready(testing.Container(WORKLOAD_CONTAINER)), state_in
+        )
+
+        # Check that the pebble layer has the correct environment variables
+        container = state_out.get_container(WORKLOAD_CONTAINER)
+        layer = container.layers["hook-service"]
+        service = layer.services["hook-service"]
+        env = service.environment
+
+        assert env["AUTHENTICATION_ENABLED"]
+        assert env["AUTHENTICATION_ISSUER"] == "https://hydra.example.com"
+        subjects = env["AUTHENTICATION_ALLOWED_SUBJECTS"].split(",")
+        assert "hook-service-client-id" in subjects
+        assert "user1" in subjects
+        assert "user2" in subjects
+        assert env["AUTHENTICATION_REQUIRED_SCOPE"] == "email"
+        assert env["AUTHENTICATION_JWKS_URL"] == ""
+
+    def test_when_manual_config_exists(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        """Test that correct env vars are set when manual config is provided."""
+        config = {
+            "authn_issuer": "https://manual.example.com",
+            "authn_jwks_url": "https://manual.example.com/jwks",
+            "authn_allowed_subjects": "manual_user",
+            "authn_allowed_scope": "profile",
+        }
+        state_in = replace_state(base_state, config={**base_state.config, **config})
+
+        state_out = context.run(
+            context.on.pebble_ready(testing.Container(WORKLOAD_CONTAINER)), state_in
+        )
+
+        container = state_out.get_container(WORKLOAD_CONTAINER)
+        layer = container.layers["hook-service"]
+        service = layer.services["hook-service"]
+        env = service.environment
+
+        assert env["AUTHENTICATION_ENABLED"]
+        assert env["AUTHENTICATION_ISSUER"] == "https://manual.example.com"
+        assert env["AUTHENTICATION_JWKS_URL"] == "https://manual.example.com/jwks"
+        assert env["AUTHENTICATION_ALLOWED_SUBJECTS"] == "manual_user"
+        assert env["AUTHENTICATION_REQUIRED_SCOPE"] == "profile"
+
+
 class TestConfigChangedEvent:
     def test_when_config_missing(
         self,
@@ -163,6 +239,11 @@ class TestHolisticHandler:
             "OPENFGA_AUTHORIZATION_MODEL_ID": openfga_model_id,
             "OPENFGA_STORE_ID": "some-store-id",
             "DSN": "postgres://username:password@postgres-k8s-primary.namespace.svc.cluster.local:5432/test-model_hook-service",
+            "AUTHENTICATION_ENABLED": False,
+            "AUTHENTICATION_ISSUER": "",
+            "AUTHENTICATION_ALLOWED_SUBJECTS": "",
+            "AUTHENTICATION_REQUIRED_SCOPE": "",
+            "AUTHENTICATION_JWKS_URL": "",
         }
 
     def test_migration_needed_not_leader(
@@ -229,6 +310,75 @@ class TestCollectStatusEvent:
         state_out = context.run(context.on.collect_unit_status(), base_state)
 
         assert state_out.unit_status == testing.ActiveStatus()
+
+    def test_status_when_valid_oauth_relation(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+    ) -> None:
+        """Test that status is Active when OAuth relation is valid and no conflicting config."""
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[oauth_relation] + list(base_state.relations),
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+        state_out = context.run(context.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+
+    def test_status_when_conflicting_config(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+    ) -> None:
+        """Test behavior when both relation and manual issuer/jwks config are present."""
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+
+        config = {
+            "authn_issuer": "https://conflict.example.com",
+        }
+        state_in = replace_state(
+            base_state,
+            relations=[oauth_relation] + list(base_state.relations),
+            config={**base_state.config, **config},
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+        state_out = context.run(context.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus(
+            "Ignoring authentication config due to OAuth integration"
+        )
+
+    def test_status_when_partial_manual_config(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        """Test BlockedStatus when manual config is missing issuer."""
+        config = {
+            "authn_allowed_subjects": "user1",
+        }
+        state_in = replace_state(
+            base_state,
+            config={**base_state.config, **config},
+        )
+
+        state_out = context.run(context.on.collect_unit_status(), state_in)
+
+        assert isinstance(state_out.unit_status, testing.BlockedStatus)
 
     @pytest.mark.parametrize(
         "condition, condition_value, status, message, leader",
@@ -391,6 +541,49 @@ class TestOpenFGAEvents:
         peer_rel_out = state_out.get_relation(peer_relation.id)
         assert version not in peer_rel_out.local_app_data
 
+
+class TestGetAccessTokenAction:
+    def test_when_oauth_integration_missing(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        """Test action failure when integration is missing."""
+        # ops raises ActionFailed when event.fail() is called.
+        with pytest.raises(Exception, match="OAuth integration is not ready"):
+            context.run(context.on.action("get-access-token"), base_state)
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+        mocked_requests: MagicMock,
+    ) -> None:
+        """Test successful token retrieval."""
+        mock_client = mocked_requests.return_value.__enter__.return_value
+        mock_client.get_access_token.return_value = "my-token"
+
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+
+        state_in = replace_state(
+            base_state,
+            relations=[oauth_relation] + list(base_state.relations),
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+        context.run(context.on.action("get-access-token"), state_in)
+
+        mock_client.get_access_token.assert_called_with(
+            client_id="hook-service-client-id",
+            client_secret="supersecret",
+        )
+
+
 class TestCertificateEvents:
     def test_on_certificate_changed(
         self,
@@ -406,6 +599,10 @@ class TestCertificateEvents:
 
         # Mock parent directory creation
         mock_path.parent.mkdir.return_value = None
+
+        # Mock TLSCertificates to bypass library issues and test charm logic
+        mock_tls = mocker.patch("charm.TLSCertificates")
+        mock_tls.load.return_value.ca_bundle = "some-ca-cert"
 
         state_in = replace_state(
             base_state,

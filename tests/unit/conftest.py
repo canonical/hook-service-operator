@@ -11,7 +11,7 @@ from ops.testing import Exec, Model
 from pytest_mock import MockerFixture
 
 from charm import HookServiceOperatorCharm
-from constants import WORKLOAD_CONTAINER
+from constants import OAUTH_INTEGRATION_NAME
 
 
 @pytest.fixture(autouse=True)
@@ -361,6 +361,26 @@ def mocked_get_missing_config_keys(mocker: MockerFixture) -> MagicMock:
 
 
 @pytest.fixture
+def oauth_relation() -> testing.Relation:
+    return testing.Relation(
+        endpoint=OAUTH_INTEGRATION_NAME,
+        interface="oauth",
+        remote_app_name="hydra",
+        remote_app_data={
+            "issuer_url": "https://hydra.example.com",
+            "authorization_endpoint": "https://hydra.example.com/oauth2/auth",
+            "token_endpoint": "https://hydra.example.com/oauth2/token",
+            "introspection_endpoint": "https://hydra.example.com/admin/oauth2/introspect",
+            "userinfo_endpoint": "https://hydra.example.com/userinfo",
+            "jwks_endpoint": "https://hydra.example.com/.well-known/jwks.json",
+            "scope": "openid",
+            "client_id": "hook-service-client-id",
+            "client_secret_id": "hook-service-client-secret",
+        },
+    )
+
+
+@pytest.fixture
 def certificate_transfer_relation() -> testing.Relation:
     return testing.Relation(
         endpoint="receive-ca-cert",
@@ -374,6 +394,11 @@ def certificate_transfer_relation() -> testing.Relation:
             }
         },
     )
+
+
+@pytest.fixture
+def mocked_requests(mocker: MockerFixture) -> MagicMock:
+    return mocker.patch("charm.HTTPClient")
 
 
 @pytest.fixture(autouse=True)

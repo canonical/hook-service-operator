@@ -24,6 +24,8 @@ LOCAL_CHARM_CERTIFICATES_FILE = Path(LOCAL_CHARM_CERTIFICATES_PATH / "charm-cert
 # Application constants
 SERVICE_COMMAND = "hook-service serve"
 PORT = 8080
+OAUTH_GRANT_TYPES = ["client_credentials"]
+OAUTH_SCOPES = "openid"
 CERTIFICATES_PATH = Path("/etc/ssl/certs/")
 CERTIFICATES_FILE = Path(CERTIFICATES_PATH / "ca-certificates.crt")
 
@@ -39,4 +41,5 @@ OPENFGA_INTEGRATION_NAME = "openfga"
 OPENFGA_STORE_NAME = "hook-service-store"
 OPENFGA_MODEL_ID = "openfga_model_id"
 PEER_INTEGRATION_NAME = "hook-service"
+OAUTH_INTEGRATION_NAME = "oauth"
 CERTIFICATE_TRANSFER_INTEGRATION_NAME = "receive-ca-cert"

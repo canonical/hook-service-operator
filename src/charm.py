@@ -20,6 +20,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.hydra.v0.hydra_token_hook import HydraHookProvider
+from charms.hydra.v0.oauth import OAuthInfoChangedEvent, OAuthInfoRemovedEvent, OAuthRequirer
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     K8sResourcePatchFailedEvent,
@@ -50,6 +51,7 @@ from constants import (
     LOCAL_CHARM_CERTIFICATES_FILE,
     LOCAL_CHARM_CERTIFICATES_PATH,
     LOGGING_INTEGRATION_NAME,
+    OAUTH_INTEGRATION_NAME,
     OPENFGA_INTEGRATION_NAME,
     OPENFGA_MODEL_ID,
     OPENFGA_STORE_NAME,
@@ -70,6 +72,7 @@ from integrations import (
     DatabaseConfig,
     HydraHookIntegration,
     InternalIngressData,
+    OAuthIntegration,
     OpenFGAIntegration,
     OpenFGAModelData,
     PeerData,
@@ -80,6 +83,7 @@ from secret import Secrets
 from services import PebbleService, WorkloadService
 from utils import (
     NOOP_CONDITIONS,
+    authentication_config_status,
     container_connectivity,
     database_integration_exists,
     database_resource_is_created,
@@ -104,6 +108,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self._pebble_service = PebbleService(self.unit)
         self._secrets = Secrets(self.model)
         self._config = CharmConfig(self.config, self.model)
+
+        self.oauth_requirer = OAuthRequirer(self, relation_name=OAUTH_INTEGRATION_NAME)
+        self.oauth_integration = OAuthIntegration(self.oauth_requirer)
 
         self.hydra_token_hook = HydraHookProvider(self)
         self.hydra_token_hook_integration = HydraHookIntegration(self.hydra_token_hook)
@@ -165,6 +172,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.framework.observe(self.on.leader_settings_changed, self._on_leader_settings_changed)
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.secret_changed, self._on_secret_changed)
+        self.framework.observe(self.on.get_access_token_action, self._on_get_access_token_action)
 
         # Hydra token hook relation
         self.framework.observe(self.hydra_token_hook.on.ready, self._on_hydra_hook_ready)
@@ -243,6 +251,14 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
     @property
     def _pebble_layer(self) -> ops.pebble.Layer:
+        oauth_config = self._config.get_oauth_config()
+        oauth_provider_data = self.oauth_integration.get_oauth_provider_data(
+            allowed_subjects=oauth_config.get("authn_allowed_subjects") or "",
+            allowed_scope=oauth_config.get("authn_allowed_scope") or "",
+            jwks_url=oauth_config.get("authn_jwks_url") or "",
+            issuer=oauth_config.get("authn_issuer") or "",
+        )
+
         return self._pebble_service.render_pebble_layer(
             TracingData.load(self.tracing_requirer),
             DatabaseConfig.load(self.database_requirer),
@@ -250,6 +266,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._config,
             OpenFGAModelData.load(self.peer_data[self._workload_service.version]),
             self.openfga_integration.openfga_integration_data,
+            oauth_provider_data,
         )
 
     @property
@@ -387,6 +404,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
     def _on_database_integration_broken(self, event: ops.RelationBrokenEvent) -> None:
         self._holistic_handler(event)
 
+    def _on_oauth_info_changed(self, event: OAuthInfoChangedEvent | OAuthInfoRemovedEvent) -> None:
+        self._holistic_handler(event)
+
     def _on_openfga_store_created(self, event: OpenFGAStoreCreateEvent) -> None:
         self._holistic_handler(event)
 
@@ -466,6 +486,8 @@ class HookServiceOperatorCharm(ops.CharmBase):
         if configs := self._config.get_missing_config_keys():
             event.add_status(ops.BlockedStatus(f"Missing required configuration: {configs}"))
 
+        event.add_status(authentication_config_status(self))
+
         if not self._secrets.is_ready():
             event.add_status(ops.WaitingStatus("Waiting for secrets creation"))
 
@@ -493,6 +515,26 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         event.add_status(self.resources_patch.get_status())
         event.add_status(ops.ActiveStatus())
+
+    def _on_get_access_token_action(self, event: ops.ActionEvent) -> None:
+        """Handle the get-access-token action."""
+        if not (provider_info := self.oauth_requirer.get_provider_info()):
+            event.fail("OAuth integration is not ready")
+            return
+
+        client_id = provider_info.client_id
+        client_secret = provider_info.client_secret
+        token_endpoint = provider_info.token_endpoint
+
+        try:
+            with HTTPClient(token_url=token_endpoint) as client:
+                token = client.get_access_token(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                )
+                event.set_results({"token": token})
+        except Exception as e:
+            event.fail(f"Failed to get access token: {e}")
 
     def _resource_reqs_from_config(self) -> ResourceRequirements:
         limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}

@@ -18,6 +18,7 @@ from charms.hydra.v0.hydra_token_hook import (
     HydraHookProvider,
     ProviderData,
 )
+from charms.hydra.v0.oauth import ClientConfig, OAuthRequirer
 from charms.openfga_k8s.v1.openfga import OpenFGARequires
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
@@ -29,6 +30,8 @@ from constants import (
     CERTIFICATE_TRANSFER_INTEGRATION_NAME,
     HYDRA_TOKEN_HOOK_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
+    OAUTH_GRANT_TYPES,
+    OAUTH_SCOPES,
     OPENFGA_MODEL_ID,
     PEER_INTEGRATION_NAME,
     PORT,
@@ -276,15 +279,89 @@ class PeerData:
 
 
 @dataclass(frozen=True)
+class OAuthProviderData:
+    """The data source from the oauth integration."""
+
+    auth_enabled: bool = False
+    oidc_issuer_url: str = ""
+    allowed_subjects: str = ""
+    allowed_scope: str = ""
+    client_id: str = ""
+    jwks_url: str = ""
+    token_endpoint: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+
+    def to_env_vars(self) -> EnvVars:
+        additional_subjects = [s.strip() for s in self.allowed_subjects.split(",") if s.strip()]
+        if self.client_id:
+            additional_subjects.append(self.client_id)
+
+        return {
+            "AUTHENTICATION_ENABLED": self.auth_enabled,
+            "AUTHENTICATION_ISSUER": self.oidc_issuer_url,
+            "AUTHENTICATION_ALLOWED_SUBJECTS": ",".join(additional_subjects),
+            "AUTHENTICATION_REQUIRED_SCOPE": self.allowed_scope,
+            "AUTHENTICATION_JWKS_URL": self.jwks_url,
+        }
+
+
+class OAuthIntegration:
+    def __init__(self, requirer: OAuthRequirer) -> None:
+        self._requirer = requirer
+        self._requirer.update_client_config(self.oauth_client_config)
+
+    def is_ready(self) -> bool:
+        return True if self._requirer.is_client_created() else False
+
+    def get_oauth_provider_data(
+        self,
+        allowed_subjects: str = "",
+        allowed_scope: str = "",
+        jwks_url: str = "",
+        issuer: str = "",
+    ) -> OAuthProviderData:
+        """Get the OAuth provider data."""
+        if self._requirer.is_client_created() and (info := self._requirer.get_provider_info()):
+            return OAuthProviderData(
+                auth_enabled=True,
+                oidc_issuer_url=info.issuer_url,
+                allowed_subjects=allowed_subjects,
+                allowed_scope=allowed_scope,
+                token_endpoint=info.token_endpoint,
+                client_id=info.client_id,
+                client_secret=info.client_secret,
+            )
+
+        if issuer:
+            return OAuthProviderData(
+                auth_enabled=True,
+                oidc_issuer_url=issuer,
+                jwks_url=jwks_url,
+                allowed_subjects=allowed_subjects,
+                allowed_scope=allowed_scope,
+            )
+
+        return OAuthProviderData()
+
+    @property
+    def oauth_client_config(self) -> ClientConfig:
+        client = ClientConfig(
+            redirect_uri="https://example.com",
+            scope=OAUTH_SCOPES,
+            grant_types=OAUTH_GRANT_TYPES,
+        )
+
+        return client
+
+
+@dataclass(frozen=True)
 class TLSCertificates:
     ca_bundle: str
 
     @classmethod
     def load(cls, requirer: CertificateTransferRequires) -> "TLSCertificates":
-        """Fetch the CA certificates from all "receive-ca-cert" integrations.
-
-        Compose the trusted CA certificates in /etc/ssl/certs/ca-certificates.crt.
-        """
+        """Fetch the CA certificates from all "receive-ca-cert" integrations."""
         # deal with v1 relations
         ca_certs = requirer.get_all_certificates()
 

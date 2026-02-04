@@ -3,7 +3,7 @@
 
 """Helper class to manage the charm's config."""
 
-from typing import Any, Mapping, Tuple, TypeAlias
+from typing import Any, Mapping, Tuple, TypeAlias, cast
 
 from ops import ConfigData, Model
 
@@ -40,6 +40,19 @@ class CharmConfig:
         except Exception as e:
             raise InvalidSalesforceConfig from e
 
+    def get_oauth_config(self) -> dict[str, str | None]:
+        """Get OAuth config."""
+        return {
+            k: cast(str, v)
+            for k in [
+                "authn_allowed_subjects",
+                "authn_allowed_scope",
+                "authn_issuer",
+                "authn_jwks_url",
+            ]
+            if (v := self._config.get(k))
+        }
+
     def get_missing_config_keys(self) -> list:
         """Get missing config keys."""
         if not self._config.get("salesforce_enabled"):
@@ -54,6 +67,7 @@ class CharmConfig:
             "HTTP_PROXY": self._config.get("http_proxy"),
             "HTTPS_PROXY": self._config.get("https_proxy"),
             "NO_PROXY": self._config.get("no_proxy"),
+            **self.get_oauth_config(),
         }
         if self._config.get("salesforce_enabled"):
             consumer = self._get_salesforce_consumer_info()
