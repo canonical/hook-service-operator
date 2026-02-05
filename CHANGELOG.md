@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.7](https://github.com/canonical/hook-service-operator/compare/v1.0.6...v1.0.7) (2026-02-05)
+
+
+### Bug Fixes
+
+* add certificate transfer integration ([43fb5d0](https://github.com/canonical/hook-service-operator/commit/43fb5d07653284e357f2a8eedfdb2d3ec01d903f))
+* add HTTP client helper ([c9c4fd1](https://github.com/canonical/hook-service-operator/commit/c9c4fd18b4ad4112d36b0701d9fac8d12c845cae))
+* add OAuth integration and action ([ea3f25d](https://github.com/canonical/hook-service-operator/commit/ea3f25dfa0db8eba742d65a00666e73c8cce6efd))
+
 ## [1.0.6](https://github.com/canonical/hook-service-operator/compare/v1.0.5...v1.0.6) (2025-12-19)
 
 
