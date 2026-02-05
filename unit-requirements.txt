@@ -2,4 +2,5 @@ ops[testing]
 pytest
 pytest-mock
 coverage[toml]
+jsonschema
 -r requirements.txt

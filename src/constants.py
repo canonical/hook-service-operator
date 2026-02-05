@@ -4,6 +4,7 @@
 """Constants."""
 
 # Charm constants
+from pathlib import Path
 from string import Template
 
 POSTGRESQL_DSN_TEMPLATE = Template("postgres://$username:$password@$endpoint/$database")
@@ -14,10 +15,19 @@ API_TOKEN_SECRET_KEY = "api-token"
 API_TOKEN_SECRET_LABEL = "apitokensecret"
 CONFIG_CONSUMER_KEY_SECRET_KEY = "consumer-key"
 CONFIG_CONSUMER_SECRET_SECRET_KEY = "consumer-secret"
+LOCAL_CERTIFICATES_PATH = Path("/tmp")
+LOCAL_CERTIFICATES_FILE = Path(LOCAL_CERTIFICATES_PATH / "ca-certificates.crt")
+LOCAL_CHARM_CERTIFICATES_PATH = Path("/tmp/charm")
+LOCAL_CHARM_CERTIFICATES_FILE = Path(LOCAL_CHARM_CERTIFICATES_PATH / "charm-certificates.crt")
+
 
 # Application constants
 SERVICE_COMMAND = "hook-service serve"
 PORT = 8080
+OAUTH_GRANT_TYPES = ["client_credentials"]
+OAUTH_SCOPES = "openid"
+CERTIFICATES_PATH = Path("/etc/ssl/certs/")
+CERTIFICATES_FILE = Path(CERTIFICATES_PATH / "ca-certificates.crt")
 
 # Integration constants
 INTERNAL_ROUTE_INTEGRATION_NAME = "internal-route"
@@ -31,3 +41,5 @@ OPENFGA_INTEGRATION_NAME = "openfga"
 OPENFGA_STORE_NAME = "hook-service-store"
 OPENFGA_MODEL_ID = "openfga_model_id"
 PEER_INTEGRATION_NAME = "hook-service"
+OAUTH_INTEGRATION_NAME = "oauth"
+CERTIFICATE_TRANSFER_INTEGRATION_NAME = "receive-ca-cert"

@@ -62,6 +62,49 @@ juju integrate hook-service:hydra-token-hook hydra
 
 Once the charms reach an active state, any users that try to log in to the identity-platform will have groups in their access tokens pulled from salesforce.
 
+### Securing the API
+
+The charm supports securing the API using an OAuth provider (like Hydra). When enabled, all API requests must be authenticated with a valid Bearer token.
+
+There are two ways to configure the authentication provider.
+
+#### Option 1: Using the `oauth` Relation (Recommended)
+
+Simply integrate the charm with an OAuth provider. This will automatically configure the authentication settings and allow the charm to fetch access tokens.
+
+```console
+juju integrate hook-service:oauth hydra
+```
+
+#### Option 2: Using Configuration
+
+Alternatively, you can manually configure the provider details using charm configuration. This is useful if you cannot use the `oauth` relation.
+
+```console
+juju config hook-service \
+  authn_issuer="https://auth.example.com" \
+  authn_jwks_url="https://auth.example.com/.well-known/jwks.json"
+```
+
+#### Authorization Policy
+
+You can optionally restrict access to specific users or scopes using charm configuration:
+
+```console
+juju config hook-service \
+  authn_allowed_subjects="user1,user2" \
+  authn_allowed_scope="hook_service"
+```
+
+#### Obtaining an Access Token
+
+If you are using the `oauth` relation, you can use the `get-access-token` action to obtain a token for testing:
+
+```console
+TOKEN=$(juju run hook-service/0 get-access-token --format=json | jq -r '.["hook-service/0"].results.token')
+curl -H "Authorization: Bearer $TOKEN" http://<hook-service-ip>:8080/api/v0/authz/groups
+```
+
 ### Managing Groups and Access
 
 Once the charm is active and integrated, you can manage groups and access using the API.

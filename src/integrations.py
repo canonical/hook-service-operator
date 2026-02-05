@@ -9,12 +9,16 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferRequires,
+)
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.hydra.v0.hydra_token_hook import (
     AuthIn,
     HydraHookProvider,
     ProviderData,
 )
+from charms.hydra.v0.oauth import ClientConfig, OAuthRequirer
 from charms.openfga_k8s.v1.openfga import OpenFGARequires
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
@@ -23,8 +27,11 @@ from ops.model import Model
 from pydantic import AnyHttpUrl
 
 from constants import (
+    CERTIFICATE_TRANSFER_INTEGRATION_NAME,
     HYDRA_TOKEN_HOOK_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
+    OAUTH_GRANT_TYPES,
+    OAUTH_SCOPES,
     OPENFGA_MODEL_ID,
     PEER_INTEGRATION_NAME,
     PORT,
@@ -269,3 +276,108 @@ class PeerData:
 
         data = peers.data[self._app].pop(key, None)
         return json.loads(data) if data else {}
+
+
+@dataclass(frozen=True)
+class OAuthProviderData:
+    """The data source from the oauth integration."""
+
+    auth_enabled: bool = False
+    oidc_issuer_url: str = ""
+    allowed_subjects: str = ""
+    allowed_scope: str = ""
+    client_id: str = ""
+    jwks_url: str = ""
+    token_endpoint: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+
+    def to_env_vars(self) -> EnvVars:
+        additional_subjects = [s.strip() for s in self.allowed_subjects.split(",") if s.strip()]
+        if self.client_id:
+            additional_subjects.append(self.client_id)
+
+        return {
+            "AUTHENTICATION_ENABLED": self.auth_enabled,
+            "AUTHENTICATION_ISSUER": self.oidc_issuer_url,
+            "AUTHENTICATION_ALLOWED_SUBJECTS": ",".join(additional_subjects),
+            "AUTHENTICATION_REQUIRED_SCOPE": self.allowed_scope,
+            "AUTHENTICATION_JWKS_URL": self.jwks_url,
+        }
+
+
+class OAuthIntegration:
+    def __init__(self, requirer: OAuthRequirer) -> None:
+        self._requirer = requirer
+        self._requirer.update_client_config(self.oauth_client_config)
+
+    def is_ready(self) -> bool:
+        return True if self._requirer.is_client_created() else False
+
+    def get_oauth_provider_data(
+        self,
+        allowed_subjects: str = "",
+        allowed_scope: str = "",
+        jwks_url: str = "",
+        issuer: str = "",
+    ) -> OAuthProviderData:
+        """Get the OAuth provider data."""
+        if self._requirer.is_client_created() and (info := self._requirer.get_provider_info()):
+            return OAuthProviderData(
+                auth_enabled=True,
+                oidc_issuer_url=info.issuer_url,
+                allowed_subjects=allowed_subjects,
+                allowed_scope=allowed_scope,
+                token_endpoint=info.token_endpoint,
+                client_id=info.client_id,
+                client_secret=info.client_secret,
+            )
+
+        if issuer:
+            return OAuthProviderData(
+                auth_enabled=True,
+                oidc_issuer_url=issuer,
+                jwks_url=jwks_url,
+                allowed_subjects=allowed_subjects,
+                allowed_scope=allowed_scope,
+            )
+
+        return OAuthProviderData()
+
+    @property
+    def oauth_client_config(self) -> ClientConfig:
+        client = ClientConfig(
+            redirect_uri="https://example.com",
+            scope=OAUTH_SCOPES,
+            grant_types=OAUTH_GRANT_TYPES,
+        )
+
+        return client
+
+
+@dataclass(frozen=True)
+class TLSCertificates:
+    ca_bundle: str
+
+    @classmethod
+    def load(cls, requirer: CertificateTransferRequires) -> "TLSCertificates":
+        """Fetch the CA certificates from all "receive-ca-cert" integrations."""
+        # deal with v1 relations
+        ca_certs = requirer.get_all_certificates()
+
+        # deal with v0 relations
+        cert_transfer_integrations = requirer.charm.model.relations[
+            CERTIFICATE_TRANSFER_INTEGRATION_NAME
+        ]
+
+        for integration in cert_transfer_integrations:
+            ca = {
+                integration.data[unit]["ca"]
+                for unit in integration.units
+                if "ca" in integration.data.get(unit, {})
+            }
+            ca_certs.update(ca)
+
+        ca_bundle = "\n".join(sorted(ca_certs))
+
+        return cls(ca_bundle=ca_bundle)

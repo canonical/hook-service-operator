@@ -11,6 +11,8 @@ from ops.pebble import CheckStatus, Layer, LayerDict, ServiceInfo
 
 from cli import CommandLine
 from constants import (
+    CERTIFICATES_FILE,
+    LOCAL_CERTIFICATES_FILE,
     PEBBLE_READY_CHECK_NAME,
     PORT,
     SERVICE_COMMAND,
@@ -109,6 +111,20 @@ class WorkloadService:
         )
 
         return model_id or ""
+
+    def update_ca_certs(self) -> None:
+        ca_certs = LOCAL_CERTIFICATES_FILE.read_text() if LOCAL_CERTIFICATES_FILE.exists() else ""
+
+        current = (
+            self._container.pull(CERTIFICATES_FILE).read()
+            if self._container.exists(CERTIFICATES_FILE)
+            else ""
+        )
+
+        if current == ca_certs:
+            return
+
+        self._container.push(CERTIFICATES_FILE, ca_certs, make_dirs=True)
 
 
 class PebbleService:
