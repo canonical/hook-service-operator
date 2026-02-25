@@ -333,6 +333,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
         return True
 
     def _ensure_openfga_model(self) -> bool:
+        if not self._config.authorization_enabled:
+            logger.warning("Authorization is disabled, skipping openfga model creation")
+            return True
+
         if not self.openfga_integration.is_store_ready():
             return False
 
@@ -504,10 +508,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
         if not database_resource_is_created(self):
             event.add_status(ops.WaitingStatus("Waiting for database creation"))
 
-        if not openfga_integration_exists(self):
+        if self._config.authorization_enabled and not openfga_integration_exists(self):
             event.add_status(ops.BlockedStatus(f"Missing integration {OPENFGA_INTEGRATION_NAME}"))
 
-        if not self.openfga_integration.is_store_ready():
+        if self._config.authorization_enabled and not self.openfga_integration.is_store_ready():
             event.add_status(ops.WaitingStatus("Waiting for openfga store to be created"))
 
         if migration_status := self._get_migration_status():

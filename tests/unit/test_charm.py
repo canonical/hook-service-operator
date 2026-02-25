@@ -208,6 +208,7 @@ class TestHolisticHandler:
         state_in = replace_state(
             base_state,
             relations=[internal_route_integration] + list(base_state.relations),
+            config={**base_state.config, "authorization_enabled": True},
         )
 
         # We abuse the config_changed event, to run the unit tests on holistic_handler.
@@ -245,6 +246,24 @@ class TestHolisticHandler:
             "AUTHENTICATION_REQUIRED_SCOPE": "",
             "AUTHENTICATION_JWKS_URL": "",
         }
+
+    def test_when_authorization_disabled(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        internal_route_integration: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            relations=[internal_route_integration] + list(base_state.relations),
+            config={**base_state.config, "authorization_enabled": False},
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        layer = state_out.get_container("hook-service").layers["hook-service"]
+        assert state_out.unit_status == testing.ActiveStatus()
+        assert layer.services.get("hook-service").environment["AUTHORIZATION_ENABLED"] is False
 
     def test_migration_needed_not_leader(
         self,
@@ -462,7 +481,9 @@ class TestCollectStatusEvent:
         leader: bool,
     ) -> None:
         container = testing.Container("hook-service", can_connect=True)
-        state_in = testing.State(containers={container}, leader=leader)
+        state_in = testing.State(
+            containers={container}, leader=leader, config={"authorization_enabled": True}
+        )
 
         patch_kwargs = {}
         if isinstance(condition_value, Exception):
