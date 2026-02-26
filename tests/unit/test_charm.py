@@ -200,8 +200,6 @@ class TestHolisticHandler:
         base_state: testing.State,
         internal_route_integration: testing.Relation,
         api_token: str,
-        salesforce_domain: str,
-        salesforce_consumer_secret: testing.Secret,
         openfga_secret: testing.Secret,
         openfga_model_id: str,
     ) -> None:
@@ -227,12 +225,6 @@ class TestHolisticHandler:
             "LOG_LEVEL": "INFO",
             "PORT": "8080",
             "API_TOKEN": api_token,
-            "SALESFORCE_ENABLED": True,
-            "SALESFORCE_DOMAIN": salesforce_domain,
-            "SALESFORCE_CONSUMER_KEY": salesforce_consumer_secret.tracked_content["consumer-key"],
-            "SALESFORCE_CONSUMER_SECRET": salesforce_consumer_secret.tracked_content[
-                "consumer-secret"
-            ],
             "AUTHORIZATION_ENABLED": True,
             "OPENFGA_API_HOST": "openfga:8080",
             "OPENFGA_API_SCHEME": "http",
