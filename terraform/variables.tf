@@ -47,9 +47,3 @@ variable "revision" {
   nullable    = true
   default     = null
 }
-
-variable "salesforce_credentials_secret_id" {
-  description = "The juju secret with credentials for calling the Salesforce API."
-  type        = string
-  sensitive   = true
-}
