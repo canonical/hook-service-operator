@@ -107,6 +107,4 @@ def http_client() -> Generator[requests.Session, None, None]:
 
 @pytest.fixture
 def charm_config() -> dict:
-    return {
-        "salesforce_enabled": False,
-    }
+    return {}

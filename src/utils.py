@@ -59,11 +59,6 @@ def container_connectivity(charm: "HookServiceOperatorCharm") -> bool:
     return charm.unit.get_container(WORKLOAD_CONTAINER).can_connect()
 
 
-def config_readiness(charm: "HookServiceOperatorCharm") -> bool:
-    """Check if the charm config is ready."""
-    return not charm._config.get_missing_config_keys()
-
-
 def database_resource_is_created(charm: "HookServiceOperatorCharm") -> bool:
     return charm.database_requirer.is_resource_created()
 
@@ -127,7 +122,6 @@ NOOP_CONDITIONS: tuple[Condition, ...] = (
     container_connectivity,
     database_integration_exists,
     database_resource_is_created,
-    config_readiness,
     openfga_integration_exists,
     authentication_config_is_valid,
 )

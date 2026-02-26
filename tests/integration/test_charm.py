@@ -72,7 +72,7 @@ def test_build_and_deploy(
 
     model.integrate(TRAEFIK_APP, f"{APP_NAME}:internal-route")
     model.integrate(DB_APP, APP_NAME)
-    model.integrate(DB_APP, OPENFGA_APP)
+    model.integrate(f"{DB_APP}:database", f"{OPENFGA_APP}:database")
     model.integrate(OPENFGA_APP, f"{APP_NAME}:openfga")
 
     wait_for_active_idle(
