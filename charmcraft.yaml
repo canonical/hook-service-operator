@@ -91,7 +91,20 @@ actions:
       Generate a JWT token for accessing the Group/Authz management APIs.
 
       This action requires the oauth integration to be established and ready.
-
+  import-groups:
+    description: |
+      Batch imports user group mappings into the database.
+    params:
+      driver:
+        type: string
+        description: Import driver (e.g. salesforce)
+        default: salesforce
+      domain:
+        type: string
+        description: The API domain, e.g. for Salesforce.
+      consumer-secret:
+        type: string
+        description: Secret ID containing `consumer-key` and `consumer-secret` keys.
 
 requires:
   logging:

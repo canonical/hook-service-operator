@@ -14,7 +14,7 @@ from ops.pebble import Error, ExecError
 
 from constants import WORKLOAD_SERVICE
 from env_vars import EnvVars
-from exceptions import CreateFgaStoreError, MigrationCheckError, MigrationError
+from exceptions import CharmError, CreateFgaStoreError, MigrationCheckError, MigrationError
 
 VERSION_REGEX = re.compile(r"App Version:\s*(?P<version>\S+)\s*$")
 
@@ -178,6 +178,55 @@ class CommandLine:
         out = json.loads(stdout)
 
         return out.get("status") == "ok"
+
+    def import_groups(
+        self,
+        dsn: str,
+        driver: str,
+        domain: str = "",
+        consumer_key: str = "",
+        consumer_secret: str = "",
+        timeout: float = 300,
+    ) -> str:
+        """Run the import command.
+
+        Args:
+            dsn (str): The data source name used to connect to the service.
+            driver (str): The import driver to use.
+            domain (str): External API domain.
+            consumer_key (str): External API consumer key.
+            consumer_secret (str): External API consumer secret.
+            timeout (float): The timeout for the command.
+
+        Returns:
+            str: stdout of the command.
+        """
+        cmd = [
+            "hook-service",
+            "import",
+            "--driver",
+            driver,
+            "--dsn",
+            dsn,
+        ]
+
+        if domain:
+            cmd.extend(["--domain", domain])
+        if consumer_key:
+            cmd.extend(["--consumer-key", consumer_key])
+        if consumer_secret:
+            cmd.extend(["--consumer-secret", consumer_secret])
+
+        try:
+            stdout, _ = self._run_cmd(
+                cmd,
+                exec_config=CmdExecConfig(service_context=WORKLOAD_SERVICE, timeout=timeout),
+            )
+        except Error as err:
+            logger.error("Failed to run import groups: %s", err)
+            raise CharmError("Failed to run import command") from err
+
+        return stdout
 
     def _run_cmd(
         self,
