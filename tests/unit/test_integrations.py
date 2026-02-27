@@ -143,7 +143,6 @@ class TestOpenFGAIntegrationData:
             store_id="store-id",
         )
         expected = {
-            "AUTHORIZATION_ENABLED": True,
             "OPENFGA_STORE_ID": "store-id",
             "OPENFGA_API_TOKEN": "token",
             "OPENFGA_API_SCHEME": "http",

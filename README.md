@@ -47,7 +47,13 @@ juju config hook-service \
   salesforce_consumer_secret=salesforce-consumer
 ```
 
-The charm also requires integration with a PostgreSQL database and OpenFGA:
+If you wish to disable the access control authorization integration, you can do so by configuring the `authorization_enabled` option:
+
+```console
+juju config hook-service authorization_enabled=false
+```
+
+The charm also requires integration with a PostgreSQL database and, if `authorization_enabled` is true (the default), OpenFGA:
 
 ```console
 juju integrate hook-service:pg-database postgresql-k8s

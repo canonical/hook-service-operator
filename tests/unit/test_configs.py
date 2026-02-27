@@ -33,6 +33,25 @@ class TestCharmConfig:
         expected = {
             "LOG_LEVEL": "DEBUG",
             "SALESFORCE_ENABLED": False,
+            "AUTHORIZATION_ENABLED": True,
+            "HTTP_PROXY": None,
+            "HTTPS_PROXY": None,
+            "NO_PROXY": None,
+        }
+        actual = CharmConfig(config, mocked_model).to_env_vars()
+
+        assert actual == expected
+
+    def test_to_service_configs_with_authorization_enabled(self, mocked_model: Model) -> None:
+        config = {
+            "log_level": "debug",
+            "salesforce_enabled": False,
+            "authorization_enabled": True,
+        }
+        expected = {
+            "LOG_LEVEL": "DEBUG",
+            "SALESFORCE_ENABLED": False,
+            "AUTHORIZATION_ENABLED": True,
             "HTTP_PROXY": None,
             "HTTPS_PROXY": None,
             "NO_PROXY": None,
@@ -62,6 +81,7 @@ class TestCharmConfig:
         expected = {
             "LOG_LEVEL": "DEBUG",
             "SALESFORCE_ENABLED": True,
+            "AUTHORIZATION_ENABLED": True,
             "HTTP_PROXY": None,
             "HTTPS_PROXY": None,
             "NO_PROXY": None,

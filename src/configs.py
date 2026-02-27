@@ -59,11 +59,17 @@ class CharmConfig:
             return []
         return [k for k in self.REQUIRED_KEYS if not self._config.get(k)]
 
+    @property
+    def authorization_enabled(self) -> bool:
+        """Check whether access control authorization is enabled."""
+        return self._config.get("authorization_enabled", True)
+
     def to_env_vars(self) -> EnvVars:
         """Get config env vars."""
         env = {
             "LOG_LEVEL": self._config["log_level"].upper(),
             "SALESFORCE_ENABLED": self._config.get("salesforce_enabled", True),
+            "AUTHORIZATION_ENABLED": self.authorization_enabled,
             "HTTP_PROXY": self._config.get("http_proxy"),
             "HTTPS_PROXY": self._config.get("https_proxy"),
             "NO_PROXY": self._config.get("no_proxy"),

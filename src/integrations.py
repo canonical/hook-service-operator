@@ -219,13 +219,11 @@ class OpenFGAIntegrationData:
         return urlparse(self.url).netloc
 
     def to_env_vars(self) -> EnvVars:
-        authz_enabled = bool(self.store_id and self.api_token and self.url)
         return {
             "OPENFGA_STORE_ID": self.store_id,
             "OPENFGA_API_TOKEN": self.api_token,
             "OPENFGA_API_SCHEME": self.api_scheme,
             "OPENFGA_API_HOST": self.api_host,
-            "AUTHORIZATION_ENABLED": authz_enabled,
         }
 
 
