@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.8](https://github.com/canonical/hook-service-operator/compare/v1.0.7...v1.0.8) (2026-02-27)
+
+
+### Bug Fixes
+
+* enable flag to disable authorization ([10b0b30](https://github.com/canonical/hook-service-operator/commit/10b0b30c897d43933fd67acc3ffea82bdf2344a7))
+* make openfga optional ([7d33408](https://github.com/canonical/hook-service-operator/commit/7d33408f244c2c9dc7562931623e4973196b527c))
+
 ## [1.0.7](https://github.com/canonical/hook-service-operator/compare/v1.0.6...v1.0.7) (2026-02-05)
 
 
