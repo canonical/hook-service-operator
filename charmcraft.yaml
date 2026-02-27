@@ -54,21 +54,7 @@ config:
         automatically deduced from it).
         See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
       type: string
-    salesforce_domain:
-      description: |
-        The Salesforce domain URL. E.g. https://login.test.salesfoce.com
-      type: string
-    salesforce_consumer_secret:
-      description: |
-        A secret with the consumer key/secret pair to use when calling the salesforce API.
-
-        The secret must contain the keys `consumer-key` and `consumer-secret`
-      type: secret
-    salesforce_enabled:
-      description: |
-        Whether the salesforce integration is enabled.
-      type: boolean
-      default: true
+      # Salesforce configuration is no longer read by the service. Use the import-groups action instead.
     authorization_enabled:
       description: |
         Whether the access control authorization integration is enabled.
@@ -105,7 +91,20 @@ actions:
       Generate a JWT token for accessing the Group/Authz management APIs.
 
       This action requires the oauth integration to be established and ready.
-
+  import-groups:
+    description: |
+      Batch imports user group mappings into the database.
+    params:
+      driver:
+        type: string
+        description: Import driver (e.g. salesforce)
+        default: salesforce
+      domain:
+        type: string
+        description: The API domain, e.g. for Salesforce.
+      consumer-secret:
+        type: string
+        description: Secret ID containing `consumer-key` and `consumer-secret` keys.
 
 requires:
   logging:

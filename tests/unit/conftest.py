@@ -104,47 +104,19 @@ def api_token() -> str:
 
 
 @pytest.fixture()
-def salesforce_consumer_info() -> dict[str, str]:
-    return {"consumer-key": "key", "consumer-secret": "secret"}
-
-
-@pytest.fixture()
-def api_token_secret(api_token: str) -> testing.Secret:
-    return testing.Secret(
-        tracked_content={"api-token": api_token},
-        label="apitokensecret",
-    )
-
-
-@pytest.fixture()
-def salesforce_consumer_secret(salesforce_consumer_info: dict[str, str]) -> testing.Secret:
-    return testing.Secret(
-        tracked_content=salesforce_consumer_info,
-    )
-
-
-@pytest.fixture()
 def mocked_secrets(
     api_token_secret: testing.Secret,
-    salesforce_consumer_secret: testing.Secret,
     openfga_secret: testing.Secret,
 ) -> list[testing.Secret]:
-    return [api_token_secret, salesforce_consumer_secret, openfga_secret]
+    return [api_token_secret, openfga_secret]
 
 
 @pytest.fixture
-def salesforce_domain() -> str:
-    return "https://domain.salesforce.com"
-
-
-@pytest.fixture
-def charm_config(salesforce_domain: str, salesforce_consumer_secret: testing.Secret) -> dict:
+def charm_config() -> dict:
     return {
         "http_proxy": "http://proxy.internal:6666",
         "https_proxy": "http://proxy.internal:6666",
         "no_proxy": "http://proxy.internal:6666",
-        "salesforce_domain": salesforce_domain,
-        "salesforce_consumer_secret": salesforce_consumer_secret.id,
     }
 
 
@@ -162,7 +134,6 @@ def mocked_openfga_integration_exists(mocker: MockerFixture) -> MagicMock:
 def all_satisfied_conditions(
     mocked_container_connectivity: MagicMock,
     mocked_secrets_is_ready: MagicMock,
-    mocked_get_missing_config_keys: MagicMock,
     mocked_is_running: MagicMock,
     mocked_database_integration_exists: MagicMock,
     mocked_database_resource_is_created: MagicMock,
@@ -353,11 +324,6 @@ def mocked_container_connectivity(mocker: MockerFixture) -> MagicMock:
 @pytest.fixture
 def mocked_secrets_is_ready(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("charm.Secrets.is_ready", return_value=True)
-
-
-@pytest.fixture
-def mocked_get_missing_config_keys(mocker: MockerFixture) -> MagicMock:
-    return mocker.patch("charm.CharmConfig.get_missing_config_keys", return_value=[])
 
 
 @pytest.fixture

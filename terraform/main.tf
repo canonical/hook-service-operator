@@ -9,10 +9,8 @@ resource "juju_application" "application" {
   name       = var.app_name
   model_uuid = var.model
   trust      = true
-  config = merge(
-    var.config,
-    { salesforce_consumer_secret = format("secret:%s", var.salesforce_credentials_secret_id) }
-  )
+  config     = var.config
+
   constraints = var.constraints
   units       = var.units
 

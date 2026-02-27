@@ -173,6 +173,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.secret_changed, self._on_secret_changed)
         self.framework.observe(self.on.get_access_token_action, self._on_get_access_token_action)
+        self.framework.observe(self.on.import_groups_action, self._on_import_groups_action)
 
         # Hydra token hook relation
         self.framework.observe(self.hydra_token_hook.on.ready, self._on_hydra_hook_ready)
@@ -487,9 +488,6 @@ class HookServiceOperatorCharm(ops.CharmBase):
         if not (can_connect := container_connectivity(self)):
             event.add_status(ops.WaitingStatus("Container is not connected yet"))
 
-        if configs := self._config.get_missing_config_keys():
-            event.add_status(ops.BlockedStatus(f"Missing required configuration: {configs}"))
-
         event.add_status(authentication_config_status(self))
 
         if not self._secrets.is_ready():
@@ -539,6 +537,45 @@ class HookServiceOperatorCharm(ops.CharmBase):
                 event.set_results({"token": token})
         except Exception as e:
             event.fail(f"Failed to get access token: {e}")
+
+    def _on_import_groups_action(self, event: ops.ActionEvent) -> None:
+        """Handle the import-groups action."""
+        if not self.database_requirer.is_resource_created():
+            event.fail("Database is not ready yet.")
+            return
+
+        driver = event.params.get("driver", "salesforce")
+        domain = event.params.get("domain", "")
+        consumer_secret_id = event.params.get("consumer-secret", "")
+
+        consumer_key = ""
+        consumer_secret = ""
+        if not consumer_secret_id:
+            event.fail("Consumer secret ID is not provided")
+            return
+
+        try:
+            secret = self.model.get_secret(id=consumer_secret_id)
+            content = secret.get_content(refresh=True)
+            consumer_key = content.get("consumer-key", "")
+            consumer_secret = content.get("consumer-secret", "")
+        except Exception as e:
+            event.fail(f"Failed to fetch consumer secret: {e}")
+            return
+
+        database_config = DatabaseConfig.load(self.database_requirer)
+
+        try:
+            stdout = self._cli.import_groups(
+                dsn=database_config.dsn,
+                driver=driver,
+                domain=domain,
+                consumer_key=consumer_key,
+                consumer_secret=consumer_secret,
+            )
+            event.set_results({"result": stdout})
+        except Exception as e:
+            event.fail(f"Import failed: {e}")
 
     def _resource_reqs_from_config(self) -> ResourceRequirements:
         limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}
