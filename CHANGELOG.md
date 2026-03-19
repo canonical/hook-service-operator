@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.0](https://github.com/canonical/hook-service-operator/compare/v1.0.8...v1.1.0) (2026-03-19)
+
+
+### Features
+
+* add importer action ([26e6c68](https://github.com/canonical/hook-service-operator/commit/26e6c683bc8af292d001b43e76e4c7f777dd54e1))
+* remove salesforce dependency ([91f51db](https://github.com/canonical/hook-service-operator/commit/91f51db1740787aaebb76079fd17266cd176cfe3))
+* upgrade to use v1.2.0 hook service image ([8d34df8](https://github.com/canonical/hook-service-operator/commit/8d34df81597ad00b0dcbe37448e5a74a05eca325))
+
+
+### Bug Fixes
+
+* remove salesforce from tf module ([1c0a119](https://github.com/canonical/hook-service-operator/commit/1c0a119ffafd966d083f384265d16caa8353698e))
+
 ## [1.0.8](https://github.com/canonical/hook-service-operator/compare/v1.0.7...v1.0.8) (2026-02-27)
 
 
