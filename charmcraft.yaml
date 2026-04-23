@@ -144,6 +144,13 @@ requires:
       Receive a CA cert.
       This relation can be used with a local CA to obtain the CA cert that was used to sign proxied
       endpoints.
+  tenant-service-info:
+    interface: tenant_service_info
+    limit: 1
+    optional: true
+    description: |
+      Receive the tenant-service HTTP and gRPC URLs.
+      When established, hook-service validates tenant membership during token enrichment.
 
 provides:
   metrics-endpoint:
@@ -175,7 +182,7 @@ resources:
   oci-image:
     type: oci-image
     description: OCI image for hook-service
-    upstream-source: ghcr.io/canonical/hook-service:v1.2.0
+    upstream-source: ghcr.io/canonical/hook-service:v1.3.0
 
 parts:
   charm:

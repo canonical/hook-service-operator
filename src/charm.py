@@ -35,6 +35,7 @@ from charms.openfga_k8s.v1.openfga import (
 )
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
+from charms.tenant_service_operator.v0.tenant_service_info import TenantServiceInfoRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 
 from cli import CommandLine
@@ -59,6 +60,7 @@ from constants import (
     PORT,
     PROMETHEUS_SCRAPE_INTEGRATION_NAME,
     TEMPO_TRACING_INTEGRATION_NAME,
+    TENANT_SERVICE_INFO_INTEGRATION_NAME,
     WORKLOAD_CONTAINER,
 )
 from exceptions import (
@@ -76,6 +78,7 @@ from integrations import (
     OpenFGAIntegration,
     OpenFGAModelData,
     PeerData,
+    TenantServiceInfoData,
     TLSCertificates,
     TracingData,
 )
@@ -160,6 +163,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
             relationship_name=CERTIFICATE_TRANSFER_INTEGRATION_NAME,
         )
 
+        self.tenant_service_info_requirer = TenantServiceInfoRequirer(
+            self, relation_name=TENANT_SERVICE_INFO_INTEGRATION_NAME
+        )
+
         self.framework.observe(self.on.hook_service_pebble_ready, self._on_pebble_ready)
         self.framework.observe(
             self.on.hook_service_pebble_check_failed, self._on_pebble_check_failed
@@ -196,6 +203,16 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.framework.observe(
             self.certificate_transfer_requirer.on.certificates_removed,
             self._on_certificate_transfer_changed,
+        )
+
+        # Tenant service info relation
+        self.framework.observe(
+            self.tenant_service_info_requirer.on.tenant_service_info_changed,
+            self._on_tenant_service_info_changed,
+        )
+        self.framework.observe(
+            self.tenant_service_info_requirer.on.tenant_service_info_removed,
+            self._on_tenant_service_info_changed,
         )
 
         # COS relations
@@ -268,6 +285,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             OpenFGAModelData.load(self.peer_data[self._workload_service.version]),
             self.openfga_integration.openfga_integration_data,
             oauth_provider_data,
+            TenantServiceInfoData.load(self.model),
         )
 
     @property
@@ -301,6 +319,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self.hydra_token_hook_integration.update_relation_data(
                 self._hydra_hook_url,
                 self._secrets.api_token,
+                tenant_service_ready=bool(TenantServiceInfoData.load(self.model).service_url),
             )
         return True
 
@@ -422,6 +441,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self._holistic_handler(event)
 
     def _on_certificate_transfer_changed(self, event: ops.EventBase) -> None:
+        self._holistic_handler(event)
+
+    def _on_tenant_service_info_changed(self, event: ops.EventBase) -> None:
         self._holistic_handler(event)
 
     def _on_pebble_ready(self, event: ops.PebbleReadyEvent) -> None:
