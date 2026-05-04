@@ -70,13 +70,12 @@ data "juju_secret" "salesforce_consumer_secret" {
 }
 
 module "application" {
-  source                           = "../terraform"
-  model                            = data.juju_model.model.uuid
-  app_name                         = var.application_name
-  units                            = var.charm.units
-  base                             = var.charm.base
-  config                           = var.charm.config
-  salesforce_credentials_secret_id = sensitive(data.juju_secret.salesforce_consumer_secret.secret_id)
-  channel                          = var.channel
-  revision                         = var.revision
+  source   = "../terraform"
+  model    = data.juju_model.model.uuid
+  app_name = var.application_name
+  units    = var.charm.units
+  base     = var.charm.base
+  config   = var.charm.config
+  channel  = var.channel
+  revision = var.revision
 }

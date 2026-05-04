@@ -17,6 +17,7 @@ DEFAULT_CONTAINER_ENV = {
     "PORT": str(PORT),
     "API_TOKEN": "",
     "AUTHORIZATION_ENABLED": False,
+    "TENANT_SERVICE_URL": "",
 }
 
 

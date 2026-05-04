@@ -36,6 +36,7 @@ from constants import (
     PEER_INTEGRATION_NAME,
     PORT,
     POSTGRESQL_DSN_TEMPLATE,
+    TENANT_SERVICE_INFO_INTEGRATION_NAME,
 )
 from env_vars import EnvVars
 
@@ -134,13 +135,20 @@ class HydraHookIntegration:
         rel = self._provider._charm.model.get_relation(HYDRA_TOKEN_HOOK_INTEGRATION_NAME)
         return bool(rel and rel.active)
 
-    def update_relation_data(self, hook_url: str, api_token: str) -> None:
+    def update_relation_data(
+        self, hook_url: str, api_token: str, tenant_service_ready: bool = False
+    ) -> None:
+        claims = ["groups"]
+        if tenant_service_ready:
+            claims.append("tenant_id")
+
         self._provider.update_relations_app_data(
             ProviderData(
                 url=hook_url,
                 auth_config_name="Authorization",
                 auth_config_value=api_token,
                 auth_config_in=AuthIn.header,
+                enabled_claims=claims,
             )
         )
 
@@ -284,7 +292,6 @@ class OAuthProviderData:
     oidc_issuer_url: str = ""
     allowed_subjects: str = ""
     allowed_scope: str = ""
-    client_id: str = ""
     jwks_url: str = ""
     token_endpoint: str = ""
     client_id: str = ""
@@ -351,6 +358,30 @@ class OAuthIntegration:
         )
 
         return client
+
+
+@dataclass(frozen=True)
+class TenantServiceInfoData:
+    """The data source from the tenant-service-info integration."""
+
+    service_url: str = ""
+
+    def to_env_vars(self) -> EnvVars:
+        """Get tenant service env vars."""
+        return {
+            "TENANT_SERVICE_URL": self.service_url,
+        }
+
+    @classmethod
+    def load(
+        cls, charm_model: Model, integration_name: str = TENANT_SERVICE_INFO_INTEGRATION_NAME
+    ) -> "TenantServiceInfoData":
+        """Load tenant service info from the relation databag."""
+        if not (relation := charm_model.get_relation(integration_name)):
+            return cls()
+        if not relation.app:
+            return cls()
+        return cls(service_url=relation.data[relation.app].get("service_url", ""))
 
 
 @dataclass(frozen=True)
