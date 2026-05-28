@@ -35,7 +35,7 @@ from charms.openfga_k8s.v1.openfga import (
 )
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
-from charms.tenant_service_operator.v0.tenant_service_info import TenantServiceInfoRequirer
+from charms.tenant_service.v0.tenant_service_info import TenantServiceInfoRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 
 from cli import CommandLine
