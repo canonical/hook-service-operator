@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/canonical/hook-service-operator/compare/v1.1.0...v1.1.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* downgrade tf version ([4077e85](https://github.com/canonical/hook-service-operator/commit/4077e8521bb11b835bbf924a23dc0cfd85d13dcc))
+
 ## [1.1.0](https://github.com/canonical/hook-service-operator/compare/v1.0.8...v1.1.0) (2026-05-28)
 
 
