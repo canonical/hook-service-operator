@@ -111,44 +111,86 @@ TOKEN=$(juju run hook-service/0 get-access-token --format=json | jq -r '.["hook-
 curl -H "Authorization: Bearer $TOKEN" http://<hook-service-ip>:8080/api/v0/authz/groups
 ```
 
-### Managing Groups and Access
+### Managing Groups and Users
 
-Once the charm is active and integrated, you can manage groups and access using the API.
+The charm exposes Juju actions for day-2 group and user management. These are
+the preferred interface for operators over direct API access.
 
-First, set up the necessary environment variables:
+If the `oauth` relation is configured, API actions automatically obtain a JWT
+token via the client credentials flow. Without the relation, requests are
+unauthenticated.
 
-```bash
-# set the client ID
-export CLIENT_ID="<client-id>"
-# the hook service unit IP
-export HOOK_SERVICE_HOST="<hook-service-ip>:8000"
-export USER_EMAIL="my.email@example.com"
-export GROUP_NAME="my group name"
-export GROUP_DESCRIPTION="something"
+#### Token
+
+| Action | Description |
+|---|---|
+| `get-access-token` | Obtain a JWT Bearer token for direct API calls or testing. |
+
+```console
+juju run hook-service/0 get-access-token
 ```
 
-Create a group:
+#### Group management
 
-```bash
-export GROUP_ID=$(curl -s -XPOST "http://${HOOK_SERVICE_HOST}/api/v0/authz/groups" \
-  -H "Content-Type: application/json" \
-  -d "{\"name\": \"$GROUP_NAME\", \"description\": \"$GROUP_DESCRIPTION\", \"type\": \"local\"}" | yq .data[0].id)
+These actions call the hook-service REST API.
+
+| Action | Description |
+|---|---|
+| `create-group` | Create a new local group. Returns `group-id`. |
+| `delete-group` | Delete a group by ID. |
+| `list-groups` | List all groups. Returns a JSON array. |
+
+```console
+# Create a group
+juju run hook-service/0 create-group name=admins description="Admin users"
+
+# List all groups (useful for discovering group IDs)
+juju run hook-service/0 list-groups
+
+# Delete a group
+juju run hook-service/0 delete-group group-id=<group-id>
 ```
 
-Add a user to the group:
+#### User management
 
-```bash
-curl -s -XPOST "http://${HOOK_SERVICE_HOST}/api/v0/authz/groups/${GROUP_ID}/users" \
-  -H "Content-Type: application/json" \
-  -d "[\"${USER_EMAIL}\"]"
+These actions interact directly with the database via the hook-service CLI and
+require the PostgreSQL integration to be ready.
+
+| Action | Description |
+|---|---|
+| `users-delete` | Remove a user from all groups. |
+| `users-list-groups` | List all groups a user belongs to. Returns JSON. |
+| `users-set-groups` | Replace a user's group memberships (comma-separated group IDs). |
+| `groups-add-users` | Add users to a group (comma-separated user IDs). |
+| `groups-remove-users` | Remove users from a group (comma-separated user IDs). |
+| `groups-list-users` | List all users in a group. Returns JSON. |
+
+```console
+# List groups for a user
+juju run hook-service/0 users-list-groups user-id=alice@example.com
+
+# Replace a user's memberships
+juju run hook-service/0 users-set-groups user-id=alice@example.com groups=<group-id-1>,<group-id-2>
+
+# Add users to a group
+juju run hook-service/0 groups-add-users group-id=<group-id> users=alice@example.com,bob@example.com
+
+# Remove a user from all groups
+juju run hook-service/0 users-delete user-id=alice@example.com
 ```
 
-Grant the group access to an application:
+#### Bulk import
 
-```bash
-curl -s -XPOST "http://${HOOK_SERVICE_HOST}/api/v0/authz/groups/${GROUP_ID}/apps" \
-  -H "Content-Type: application/json" \
-  -d "{\"client_id\": \"$CLIENT_ID\"}"
+The `import-groups` action batch-imports group memberships from an external
+driver (e.g. Salesforce). Pass the Juju secret ID that contains
+`consumer-key` and `consumer-secret`:
+
+```console
+# Dry-run import (additive only)
+juju run hook-service/0 import-groups consumer-secret=<secret-id> domain=<api-domain>
+
+# Import and remove stale groups/memberships no longer in the driver
+juju run hook-service/0 import-groups consumer-secret=<secret-id> domain=<api-domain> sync=true
 ```
 
 ## Security
