@@ -90,9 +90,47 @@ actions:
       Generate a JWT token for accessing the Group/Authz management APIs.
 
       This action requires the oauth integration to be established and ready.
+  create-group:
+    description: |
+      Create a new group via the hook-service API.
+
+      Returns the ID of the newly created group.
+    params:
+      name:
+        type: string
+        description: Group name.
+      description:
+        type: string
+        description: Group description.
+        default: ""
+      type:
+        type: string
+        description: Group type (e.g. "local").
+        default: local
+    required:
+      - name
+  delete-group:
+    description: |
+      Delete a group via the hook-service API.
+    params:
+      group-id:
+        type: string
+        description: The ID of the group to delete.
+    required:
+      - group-id
+  list-groups:
+    description: |
+      List all groups via the hook-service API.
+
+      Returns a JSON array of group objects including their IDs, names, and descriptions.
   import-groups:
     description: |
       Batch imports user group mappings into the database.
+
+      When sync=true, the database is reconciled with the driver data: stale groups
+      and memberships that no longer exist in the driver are removed. If the openfga
+      integration is configured, authorization tuples for deleted groups are also
+      cleaned up automatically.
     params:
       driver:
         type: string
@@ -104,6 +142,93 @@ actions:
       consumer-secret:
         type: string
         description: Secret ID containing `consumer-key` and `consumer-secret` keys.
+      sync:
+        type: boolean
+        description: |
+          Reconcile the database with the driver data, removing stale groups and memberships.
+          Only groups with the driver's prefix (e.g. `salesforce:`) are affected; local/admin-created
+          groups are never touched.
+        default: false
+  users-delete:
+    description: |
+      Remove a user from all groups.
+
+      This operation is idempotent and succeeds even if the user has no group memberships.
+      The user is identified by their email address.
+    params:
+      user-id:
+        type: string
+        description: The user ID (email address) to remove from all groups.
+    required:
+      - user-id
+  users-list-groups:
+    description: |
+      List all groups a user belongs to.
+
+      Returns a JSON array of group objects for the specified user.
+    params:
+      user-id:
+        type: string
+        description: The user ID (email address) to list groups for.
+    required:
+      - user-id
+  users-set-groups:
+    description: |
+      Replace a user's group memberships.
+
+      Sets the user's group memberships to exactly the provided list,
+      removing any previous memberships not included.
+    params:
+      user-id:
+        type: string
+        description: The user ID (email address) whose memberships to replace.
+      groups:
+        type: string
+        description: Comma-separated list of group IDs to assign to the user.
+    required:
+      - user-id
+      - groups
+  groups-add-users:
+    description: |
+      Add one or more users to a group.
+
+      This operation is idempotent; adding a user already in the group succeeds without error.
+    params:
+      group-id:
+        type: string
+        description: The group ID to add users to.
+      users:
+        type: string
+        description: Comma-separated list of user IDs (email addresses) to add.
+    required:
+      - group-id
+      - users
+  groups-remove-users:
+    description: |
+      Remove one or more users from a group.
+
+      This operation is idempotent; removing a user not in the group succeeds without error.
+    params:
+      group-id:
+        type: string
+        description: The group ID to remove users from.
+      users:
+        type: string
+        description: Comma-separated list of user IDs (email addresses) to remove.
+    required:
+      - group-id
+      - users
+  groups-list-users:
+    description: |
+      List all users in a group.
+
+      Returns a JSON array of user IDs for the specified group.
+    params:
+      group-id:
+        type: string
+        description: The group ID to list users for.
+    required:
+      - group-id
 
 requires:
   logging:
@@ -182,7 +307,7 @@ resources:
   oci-image:
     type: oci-image
     description: OCI image for hook-service
-    upstream-source: ghcr.io/canonical/hook-service:v1.3.0
+    upstream-source: ghcr.io/canonical/hook-service:v1.3.1
 
 parts:
   charm:
