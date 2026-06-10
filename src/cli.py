@@ -299,7 +299,9 @@ class CommandLine:
         ]
 
         try:
-            stdout, _ = self._run_cmd(cmd, exec_config=CmdExecConfig(service_context=WORKLOAD_SERVICE))
+            stdout, _ = self._run_cmd(
+                cmd, exec_config=CmdExecConfig(service_context=WORKLOAD_SERVICE)
+            )
         except Error as err:
             logger.error("Failed to list groups for user %s: %s", user_id, err)
             raise CharmError("Failed to run users list-groups command") from err
@@ -415,7 +417,9 @@ class CommandLine:
         ]
 
         try:
-            stdout, _ = self._run_cmd(cmd, exec_config=CmdExecConfig(service_context=WORKLOAD_SERVICE))
+            stdout, _ = self._run_cmd(
+                cmd, exec_config=CmdExecConfig(service_context=WORKLOAD_SERVICE)
+            )
         except Error as err:
             logger.error("Failed to list users in group %s: %s", group_id, err)
             raise CharmError("Failed to run groups list-users command") from err
