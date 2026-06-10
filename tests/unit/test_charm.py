@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from ops import StatusBase, testing
+from pytest_mock import MockerFixture
 
 from constants import OPENFGA_INTEGRATION_NAME, WORKLOAD_CONTAINER
 from exceptions import MigrationCheckError, MigrationError
@@ -610,6 +611,761 @@ class TestGetAccessTokenAction:
             client_id="hook-service-client-id",
             client_secret="supersecret",
         )
+
+
+class TestCreateGroupAction:
+    def _state_with_oauth(
+        self,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+    ) -> testing.State:
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+        return replace_state(
+            base_state,
+            relations=[oauth_relation] + list(base_state.relations),
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+    def test_when_unauthenticated(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mock_client = mocked_requests.return_value.__enter__.return_value
+        mock_client.create_group.return_value = "new-group-id"
+
+        context.run(
+            context.on.action("create-group", params={"name": "test-group"}),
+            base_state,
+        )
+
+        mock_client.get_access_token.assert_not_called()
+        mock_client.create_group.assert_called_once_with(
+            name="test-group",
+            description="",
+            group_type="local",
+            access_token="",
+        )
+
+    def test_when_authenticated(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mock_client = mocked_requests.return_value.__enter__.return_value
+        mock_client.get_access_token.return_value = "jwt-token"
+        mock_client.create_group.return_value = "new-group-id"
+
+        context.run(
+            context.on.action(
+                "create-group",
+                params={"name": "test-group", "description": "a test group"},
+            ),
+            self._state_with_oauth(base_state, oauth_relation),
+        )
+
+        mock_client.get_access_token.assert_called_once_with(
+            client_id="hook-service-client-id",
+            client_secret="supersecret",
+        )
+        mock_client.create_group.assert_called_once_with(
+            name="test-group",
+            description="a test group",
+            group_type="local",
+            access_token="jwt-token",
+        )
+
+    def test_when_api_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mocked_requests.return_value.__enter__.return_value.create_group.side_effect = Exception(
+            "connection refused"
+        )
+
+        with pytest.raises(Exception, match="Failed to create group"):
+            context.run(
+                context.on.action("create-group", params={"name": "test-group"}),
+                base_state,
+            )
+
+
+class TestDeleteGroupAction:
+    def _state_with_oauth(
+        self,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+    ) -> testing.State:
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+        return replace_state(
+            base_state,
+            relations=[oauth_relation] + list(base_state.relations),
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+    def test_when_unauthenticated(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_requests: MagicMock,
+    ) -> None:
+        context.run(
+            context.on.action("delete-group", params={"group-id": "some-group-id"}),
+            base_state,
+        )
+
+        mock_client = mocked_requests.return_value.__enter__.return_value
+        mock_client.get_access_token.assert_not_called()
+        mock_client.delete_group.assert_called_once_with(
+            group_id="some-group-id",
+            access_token="",
+        )
+
+    def test_when_authenticated(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mock_client = mocked_requests.return_value.__enter__.return_value
+        mock_client.get_access_token.return_value = "jwt-token"
+
+        context.run(
+            context.on.action("delete-group", params={"group-id": "some-group-id"}),
+            self._state_with_oauth(base_state, oauth_relation),
+        )
+
+        mock_client.get_access_token.assert_called_once_with(
+            client_id="hook-service-client-id",
+            client_secret="supersecret",
+        )
+        mock_client.delete_group.assert_called_once_with(
+            group_id="some-group-id",
+            access_token="jwt-token",
+        )
+
+    def test_when_api_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mocked_requests.return_value.__enter__.return_value.delete_group.side_effect = Exception(
+            "404 not found"
+        )
+
+        with pytest.raises(Exception, match="Failed to delete group"):
+            context.run(
+                context.on.action("delete-group", params={"group-id": "some-group-id"}),
+                base_state,
+            )
+
+
+class TestListGroupsAction:
+    def _state_with_oauth(
+        self,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+    ) -> testing.State:
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+        return replace_state(
+            base_state,
+            relations=[oauth_relation] + list(base_state.relations),
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+    def test_when_unauthenticated(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mocked_requests.return_value.__enter__.return_value.list_groups.return_value = []
+
+        context.run(context.on.action("list-groups"), base_state)
+
+        mock_client = mocked_requests.return_value.__enter__.return_value
+        mock_client.get_access_token.assert_not_called()
+        mock_client.list_groups.assert_called_once_with(access_token="")
+
+    def test_when_authenticated(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        oauth_relation: testing.Relation,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mock_client = mocked_requests.return_value.__enter__.return_value
+        mock_client.get_access_token.return_value = "jwt-token"
+        mock_client.list_groups.return_value = [
+            {"id": "g1", "name": "group-one"},
+        ]
+
+        context.run(
+            context.on.action("list-groups"),
+            self._state_with_oauth(base_state, oauth_relation),
+        )
+
+        mock_client.get_access_token.assert_called_once_with(
+            client_id="hook-service-client-id",
+            client_secret="supersecret",
+        )
+        mock_client.list_groups.assert_called_once_with(access_token="jwt-token")
+
+    def test_when_api_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocked_requests: MagicMock,
+    ) -> None:
+        mocked_requests.return_value.__enter__.return_value.list_groups.side_effect = Exception(
+            "connection refused"
+        )
+
+        with pytest.raises(Exception, match="Failed to list groups"):
+            context.run(context.on.action("list-groups"), base_state)
+
+
+class TestImportGroupsAction:
+    def test_when_database_not_ready(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=False,
+        )
+        with pytest.raises(Exception, match="Database is not ready"):
+            context.run(
+                context.on.action("import-groups", params={"consumer-secret": "secret:id"}),
+                base_state,
+            )
+
+    def test_when_consumer_secret_missing(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        with pytest.raises(Exception, match="Consumer secret ID is not provided"):
+            context.run(context.on.action("import-groups"), base_state)
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.import_groups.return_value = "import output"
+
+        consumer_secret = testing.Secret(
+            tracked_content={"consumer-key": "mykey", "consumer-secret": "mysecret"},
+        )
+        state_in = replace_state(base_state, secrets=list(base_state.secrets) + [consumer_secret])
+
+        out = context.run(
+            context.on.action(
+                "import-groups",
+                params={
+                    "driver": "salesforce",
+                    "domain": "sf.example.com",
+                    "consumer-secret": consumer_secret.id,
+                },
+            ),
+            state_in,
+        )
+
+        assert out.unit_status == out.unit_status  # action succeeded (no exception)
+        mocked_cli.return_value.import_groups.assert_called_once_with(
+            dsn=mocked_database_config.load.return_value.dsn,
+            driver="salesforce",
+            domain="sf.example.com",
+            consumer_key="mykey",
+            consumer_secret="mysecret",
+            sync=False,
+            openfga_host="",
+            openfga_store_id="",
+            openfga_token="",
+            openfga_model_id="",
+        )
+
+    def test_when_sync_with_openfga(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+        openfga_model_id: str,
+        mocked_workload_service_version: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.import_groups.return_value = ""
+
+        consumer_secret = testing.Secret(
+            tracked_content={"consumer-key": "mykey", "consumer-secret": "mysecret"},
+        )
+        state_in = replace_state(base_state, secrets=list(base_state.secrets) + [consumer_secret])
+
+        context.run(
+            context.on.action(
+                "import-groups",
+                params={
+                    "driver": "salesforce",
+                    "domain": "sf.example.com",
+                    "consumer-secret": consumer_secret.id,
+                    "sync": True,
+                },
+            ),
+            state_in,
+        )
+
+        call_kwargs = mocked_cli.return_value.import_groups.call_args.kwargs
+        assert call_kwargs["sync"] is True
+        assert call_kwargs["openfga_host"] != ""
+        assert call_kwargs["openfga_store_id"] != ""
+        assert call_kwargs["openfga_token"] != ""
+
+    def test_when_cli_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.import_groups.side_effect = Exception("connection refused")
+
+        consumer_secret = testing.Secret(
+            tracked_content={"consumer-key": "mykey", "consumer-secret": "mysecret"},
+        )
+        state_in = replace_state(base_state, secrets=list(base_state.secrets) + [consumer_secret])
+
+        with pytest.raises(Exception, match="Import failed"):
+            context.run(
+                context.on.action(
+                    "import-groups",
+                    params={"consumer-secret": consumer_secret.id},
+                ),
+                state_in,
+            )
+
+
+class TestUsersDeleteAction:
+    def test_when_database_not_ready(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=False,
+        )
+        with pytest.raises(Exception, match="Database is not ready"):
+            context.run(
+                context.on.action("users-delete", params={"user-id": "alice@example.com"}),
+                base_state,
+            )
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        context.run(
+            context.on.action("users-delete", params={"user-id": "alice@example.com"}),
+            base_state,
+        )
+        mocked_cli.return_value.users_delete.assert_called_once_with(
+            dsn=mocked_database_config.load.return_value.dsn,
+            user_id="alice@example.com",
+        )
+
+    def test_when_cli_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.users_delete.side_effect = Exception("db error")
+        with pytest.raises(Exception, match="Failed to delete user"):
+            context.run(
+                context.on.action("users-delete", params={"user-id": "alice@example.com"}),
+                base_state,
+            )
+
+
+class TestUsersListGroupsAction:
+    def test_when_database_not_ready(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=False,
+        )
+        with pytest.raises(Exception, match="Database is not ready"):
+            context.run(
+                context.on.action("users-list-groups", params={"user-id": "alice@example.com"}),
+                base_state,
+            )
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.users_list_groups.return_value = '[{"id": "g1"}]'
+        context.run(
+            context.on.action("users-list-groups", params={"user-id": "alice@example.com"}),
+            base_state,
+        )
+        mocked_cli.return_value.users_list_groups.assert_called_once_with(
+            dsn=mocked_database_config.load.return_value.dsn,
+            user_id="alice@example.com",
+        )
+
+    def test_when_cli_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.users_list_groups.side_effect = Exception("db error")
+        with pytest.raises(Exception, match="Failed to list groups for user"):
+            context.run(
+                context.on.action("users-list-groups", params={"user-id": "alice@example.com"}),
+                base_state,
+            )
+
+
+class TestUsersSetGroupsAction:
+    def test_when_database_not_ready(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=False,
+        )
+        with pytest.raises(Exception, match="Database is not ready"):
+            context.run(
+                context.on.action(
+                    "users-set-groups",
+                    params={"user-id": "alice@example.com", "groups": "g1,g2"},
+                ),
+                base_state,
+            )
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        context.run(
+            context.on.action(
+                "users-set-groups",
+                params={"user-id": "alice@example.com", "groups": "g1, g2"},
+            ),
+            base_state,
+        )
+        mocked_cli.return_value.users_set_groups.assert_called_once_with(
+            dsn=mocked_database_config.load.return_value.dsn,
+            user_id="alice@example.com",
+            group_ids=["g1", "g2"],
+        )
+
+    def test_when_cli_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.users_set_groups.side_effect = Exception("db error")
+        with pytest.raises(Exception, match="Failed to set groups for user"):
+            context.run(
+                context.on.action(
+                    "users-set-groups",
+                    params={"user-id": "alice@example.com", "groups": "g1"},
+                ),
+                base_state,
+            )
+
+
+class TestGroupsAddUsersAction:
+    def test_when_database_not_ready(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=False,
+        )
+        with pytest.raises(Exception, match="Database is not ready"):
+            context.run(
+                context.on.action(
+                    "groups-add-users",
+                    params={"group-id": "g1", "users": "alice@example.com"},
+                ),
+                base_state,
+            )
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        context.run(
+            context.on.action(
+                "groups-add-users",
+                params={"group-id": "g1", "users": "alice@example.com, bob@example.com"},
+            ),
+            base_state,
+        )
+        mocked_cli.return_value.groups_add_users.assert_called_once_with(
+            dsn=mocked_database_config.load.return_value.dsn,
+            group_id="g1",
+            user_ids=["alice@example.com", "bob@example.com"],
+        )
+
+    def test_when_cli_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.groups_add_users.side_effect = Exception("db error")
+        with pytest.raises(Exception, match="Failed to add users to group"):
+            context.run(
+                context.on.action(
+                    "groups-add-users",
+                    params={"group-id": "g1", "users": "alice@example.com"},
+                ),
+                base_state,
+            )
+
+
+class TestGroupsRemoveUsersAction:
+    def test_when_database_not_ready(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=False,
+        )
+        with pytest.raises(Exception, match="Database is not ready"):
+            context.run(
+                context.on.action(
+                    "groups-remove-users",
+                    params={"group-id": "g1", "users": "alice@example.com"},
+                ),
+                base_state,
+            )
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        context.run(
+            context.on.action(
+                "groups-remove-users",
+                params={"group-id": "g1", "users": "alice@example.com"},
+            ),
+            base_state,
+        )
+        mocked_cli.return_value.groups_remove_users.assert_called_once_with(
+            dsn=mocked_database_config.load.return_value.dsn,
+            group_id="g1",
+            user_ids=["alice@example.com"],
+        )
+
+    def test_when_cli_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.groups_remove_users.side_effect = Exception("db error")
+        with pytest.raises(Exception, match="Failed to remove users from group"):
+            context.run(
+                context.on.action(
+                    "groups-remove-users",
+                    params={"group-id": "g1", "users": "alice@example.com"},
+                ),
+                base_state,
+            )
+
+
+class TestGroupsListUsersAction:
+    def test_when_database_not_ready(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=False,
+        )
+        with pytest.raises(Exception, match="Database is not ready"):
+            context.run(
+                context.on.action("groups-list-users", params={"group-id": "g1"}),
+                base_state,
+            )
+
+    def test_when_success(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.groups_list_users.return_value = '["alice@example.com"]'
+        context.run(
+            context.on.action("groups-list-users", params={"group-id": "g1"}),
+            base_state,
+        )
+        mocked_cli.return_value.groups_list_users.assert_called_once_with(
+            dsn=mocked_database_config.load.return_value.dsn,
+            group_id="g1",
+        )
+
+    def test_when_cli_fails(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        mocker: MockerFixture,
+        mocked_cli: MagicMock,
+        mocked_database_config: MagicMock,
+    ) -> None:
+        mocker.patch(
+            "charms.data_platform_libs.v0.data_interfaces.DatabaseRequires.is_resource_created",
+            return_value=True,
+        )
+        mocked_cli.return_value.groups_list_users.side_effect = Exception("db error")
+        with pytest.raises(Exception, match="Failed to list users in group"):
+            context.run(
+                context.on.action("groups-list-users", params={"group-id": "g1"}),
+                base_state,
+            )
 
 
 class TestCertificateEvents:

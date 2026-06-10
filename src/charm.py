@@ -4,6 +4,7 @@
 
 """A Juju charm for Identity Platform Hook Service."""
 
+import json
 import logging
 import subprocess
 from os.path import join
@@ -180,7 +181,18 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.secret_changed, self._on_secret_changed)
         self.framework.observe(self.on.get_access_token_action, self._on_get_access_token_action)
+        self.framework.observe(self.on.create_group_action, self._on_create_group_action)
+        self.framework.observe(self.on.delete_group_action, self._on_delete_group_action)
+        self.framework.observe(self.on.list_groups_action, self._on_list_groups_action)
         self.framework.observe(self.on.import_groups_action, self._on_import_groups_action)
+        self.framework.observe(self.on.users_delete_action, self._on_users_delete_action)
+        self.framework.observe(self.on.users_list_groups_action, self._on_users_list_groups_action)
+        self.framework.observe(self.on.users_set_groups_action, self._on_users_set_groups_action)
+        self.framework.observe(self.on.groups_add_users_action, self._on_groups_add_users_action)
+        self.framework.observe(
+            self.on.groups_remove_users_action, self._on_groups_remove_users_action
+        )
+        self.framework.observe(self.on.groups_list_users_action, self._on_groups_list_users_action)
 
         # Hydra token hook relation
         self.framework.observe(self.hydra_token_hook.on.ready, self._on_hydra_hook_ready)
@@ -560,6 +572,62 @@ class HookServiceOperatorCharm(ops.CharmBase):
         except Exception as e:
             event.fail(f"Failed to get access token: {e}")
 
+    def _get_access_token(self, client: HTTPClient) -> str:
+        """Return a JWT access token if OAuth is configured, otherwise empty string."""
+        if not (provider_info := self.oauth_requirer.get_provider_info()):
+            return ""
+        return client.get_access_token(
+            client_id=provider_info.client_id,
+            client_secret=provider_info.client_secret,
+        )
+
+    def _on_create_group_action(self, event: ops.ActionEvent) -> None:
+        """Handle the create-group action."""
+        name = event.params.get("name", "")
+        description = event.params.get("description", "")
+        group_type = event.params.get("type", "local")
+
+        provider_info = self.oauth_requirer.get_provider_info()
+        token_url = provider_info.token_endpoint if provider_info else ""
+        try:
+            with HTTPClient(token_url=token_url) as client:
+                access_token = self._get_access_token(client)
+                group_id = client.create_group(
+                    name=name,
+                    description=description,
+                    group_type=group_type,
+                    access_token=access_token,
+                )
+                event.set_results({"group-id": group_id})
+        except Exception as e:
+            event.fail(f"Failed to create group: {e}")
+
+    def _on_delete_group_action(self, event: ops.ActionEvent) -> None:
+        """Handle the delete-group action."""
+        group_id = event.params.get("group-id", "")
+
+        provider_info = self.oauth_requirer.get_provider_info()
+        token_url = provider_info.token_endpoint if provider_info else ""
+        try:
+            with HTTPClient(token_url=token_url) as client:
+                access_token = self._get_access_token(client)
+                client.delete_group(group_id=group_id, access_token=access_token)
+                event.set_results({"result": f"Group {group_id!r} deleted."})
+        except Exception as e:
+            event.fail(f"Failed to delete group: {e}")
+
+    def _on_list_groups_action(self, event: ops.ActionEvent) -> None:
+        """Handle the list-groups action."""
+        provider_info = self.oauth_requirer.get_provider_info()
+        token_url = provider_info.token_endpoint if provider_info else ""
+        try:
+            with HTTPClient(token_url=token_url) as client:
+                access_token = self._get_access_token(client)
+                groups = client.list_groups(access_token=access_token)
+                event.set_results({"result": json.dumps(groups)})
+        except Exception as e:
+            event.fail(f"Failed to list groups: {e}")
+
     def _on_import_groups_action(self, event: ops.ActionEvent) -> None:
         """Handle the import-groups action."""
         if not self.database_requirer.is_resource_created():
@@ -568,6 +636,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         driver = event.params.get("driver", "salesforce")
         domain = event.params.get("domain", "")
+        sync = event.params.get("sync", False)
         if not (consumer_secret_id := event.params.get("consumer-secret", "")):
             event.fail("Consumer secret ID is not provided")
             return
@@ -584,6 +653,18 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         database_config = DatabaseConfig.load(self.database_requirer)
 
+        openfga_host = ""
+        openfga_store_id = ""
+        openfga_token = ""
+        openfga_model_id = ""
+        if sync and self._config.authorization_enabled:
+            openfga_data = self.openfga_integration.openfga_integration_data
+            openfga_host = openfga_data.api_host
+            openfga_store_id = openfga_data.store_id
+            openfga_token = openfga_data.api_token
+            version_data = self.peer_data[self._workload_service.version]
+            openfga_model_id = version_data.get(OPENFGA_MODEL_ID, "") if isinstance(version_data, dict) else ""
+
         try:
             stdout = self._cli.import_groups(
                 dsn=database_config.dsn,
@@ -591,10 +672,111 @@ class HookServiceOperatorCharm(ops.CharmBase):
                 domain=domain,
                 consumer_key=consumer_key,
                 consumer_secret=consumer_secret,
+                sync=sync,
+                openfga_host=openfga_host,
+                openfga_store_id=openfga_store_id,
+                openfga_token=openfga_token,
+                openfga_model_id=openfga_model_id,
             )
             event.set_results({"result": stdout})
         except Exception as e:
             event.fail(f"Import failed: {e}")
+
+    def _on_users_delete_action(self, event: ops.ActionEvent) -> None:
+        """Handle the users-delete action."""
+        if not self.database_requirer.is_resource_created():
+            event.fail("Database is not ready yet.")
+            return
+
+        user_id = event.params.get("user-id", "")
+        database_config = DatabaseConfig.load(self.database_requirer)
+
+        try:
+            self._cli.users_delete(dsn=database_config.dsn, user_id=user_id)
+            event.set_results({"result": f"User {user_id!r} removed from all groups."})
+        except Exception as e:
+            event.fail(f"Failed to delete user: {e}")
+
+    def _on_users_list_groups_action(self, event: ops.ActionEvent) -> None:
+        """Handle the users-list-groups action."""
+        if not self.database_requirer.is_resource_created():
+            event.fail("Database is not ready yet.")
+            return
+
+        user_id = event.params.get("user-id", "")
+        database_config = DatabaseConfig.load(self.database_requirer)
+
+        try:
+            stdout = self._cli.users_list_groups(dsn=database_config.dsn, user_id=user_id)
+            event.set_results({"result": stdout})
+        except Exception as e:
+            event.fail(f"Failed to list groups for user: {e}")
+
+    def _on_users_set_groups_action(self, event: ops.ActionEvent) -> None:
+        """Handle the users-set-groups action."""
+        if not self.database_requirer.is_resource_created():
+            event.fail("Database is not ready yet.")
+            return
+
+        user_id = event.params.get("user-id", "")
+        groups_raw = event.params.get("groups", "")
+        group_ids = [g.strip() for g in groups_raw.split(",") if g.strip()]
+        database_config = DatabaseConfig.load(self.database_requirer)
+
+        try:
+            self._cli.users_set_groups(dsn=database_config.dsn, user_id=user_id, group_ids=group_ids)
+            event.set_results({"result": f"Groups for user {user_id!r} updated."})
+        except Exception as e:
+            event.fail(f"Failed to set groups for user: {e}")
+
+    def _on_groups_add_users_action(self, event: ops.ActionEvent) -> None:
+        """Handle the groups-add-users action."""
+        if not self.database_requirer.is_resource_created():
+            event.fail("Database is not ready yet.")
+            return
+
+        group_id = event.params.get("group-id", "")
+        users_raw = event.params.get("users", "")
+        user_ids = [u.strip() for u in users_raw.split(",") if u.strip()]
+        database_config = DatabaseConfig.load(self.database_requirer)
+
+        try:
+            self._cli.groups_add_users(dsn=database_config.dsn, group_id=group_id, user_ids=user_ids)
+            event.set_results({"result": f"Users added to group {group_id!r}."})
+        except Exception as e:
+            event.fail(f"Failed to add users to group: {e}")
+
+    def _on_groups_remove_users_action(self, event: ops.ActionEvent) -> None:
+        """Handle the groups-remove-users action."""
+        if not self.database_requirer.is_resource_created():
+            event.fail("Database is not ready yet.")
+            return
+
+        group_id = event.params.get("group-id", "")
+        users_raw = event.params.get("users", "")
+        user_ids = [u.strip() for u in users_raw.split(",") if u.strip()]
+        database_config = DatabaseConfig.load(self.database_requirer)
+
+        try:
+            self._cli.groups_remove_users(dsn=database_config.dsn, group_id=group_id, user_ids=user_ids)
+            event.set_results({"result": f"Users removed from group {group_id!r}."})
+        except Exception as e:
+            event.fail(f"Failed to remove users from group: {e}")
+
+    def _on_groups_list_users_action(self, event: ops.ActionEvent) -> None:
+        """Handle the groups-list-users action."""
+        if not self.database_requirer.is_resource_created():
+            event.fail("Database is not ready yet.")
+            return
+
+        group_id = event.params.get("group-id", "")
+        database_config = DatabaseConfig.load(self.database_requirer)
+
+        try:
+            stdout = self._cli.groups_list_users(dsn=database_config.dsn, group_id=group_id)
+            event.set_results({"result": stdout})
+        except Exception as e:
+            event.fail(f"Failed to list users in group: {e}")
 
     def _resource_reqs_from_config(self) -> ResourceRequirements:
         limits = {"cpu": self.model.config.get("cpu"), "memory": self.model.config.get("memory")}
