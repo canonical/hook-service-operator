@@ -47,6 +47,7 @@ class TestAuthn:
     def test_when_oauth_relation_exists(
         self,
         context: testing.Context,
+        container: testing.Container,
         base_state: testing.State,
         oauth_relation: testing.Relation,
     ) -> None:
@@ -69,13 +70,11 @@ class TestAuthn:
             secrets=[client_secret] + list(base_state.secrets),
         )
 
-        state_out = context.run(
-            context.on.pebble_ready(testing.Container(WORKLOAD_CONTAINER)), state_in
-        )
+        state_out = context.run(context.on.pebble_ready(container), state_in)
 
         # Check that the pebble layer has the correct environment variables
-        container = state_out.get_container(WORKLOAD_CONTAINER)
-        layer = container.layers["hook-service"]
+        container_out = state_out.get_container(WORKLOAD_CONTAINER)
+        layer = container_out.layers["hook-service"]
         service = layer.services["hook-service"]
         env = service.environment
 
@@ -91,6 +90,7 @@ class TestAuthn:
     def test_when_manual_config_exists(
         self,
         context: testing.Context,
+        container: testing.Container,
         base_state: testing.State,
     ) -> None:
         """Test that correct env vars are set when manual config is provided."""
@@ -102,12 +102,10 @@ class TestAuthn:
         }
         state_in = replace_state(base_state, config={**base_state.config, **config})
 
-        state_out = context.run(
-            context.on.pebble_ready(testing.Container(WORKLOAD_CONTAINER)), state_in
-        )
+        state_out = context.run(context.on.pebble_ready(container), state_in)
 
-        container = state_out.get_container(WORKLOAD_CONTAINER)
-        layer = container.layers["hook-service"]
+        container_out = state_out.get_container(WORKLOAD_CONTAINER)
+        layer = container_out.layers["hook-service"]
         service = layer.services["hook-service"]
         env = service.environment
 
