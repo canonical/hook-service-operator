@@ -54,3 +54,23 @@ class TestCharmConfig:
         actual = CharmConfig(config, mocked_model).to_env_vars()
 
         assert actual == expected
+
+    def test_use_ingress_for_relations_default(self, mocked_model: Model) -> None:
+        config = {
+            "log_level": "debug",
+        }
+        charm_config = CharmConfig(config, mocked_model)
+        assert charm_config.use_ingress_for_relations is False
+
+    def test_use_ingress_for_relations_explicit(self, mocked_model: Model) -> None:
+        config_true = {
+            "log_level": "debug",
+            "use_ingress_for_relations": True,
+        }
+        assert CharmConfig(config_true, mocked_model).use_ingress_for_relations is True
+
+        config_false = {
+            "log_level": "debug",
+            "use_ingress_for_relations": False,
+        }
+        assert CharmConfig(config_false, mocked_model).use_ingress_for_relations is False

@@ -302,8 +302,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
     @property
     def _hydra_hook_url(self) -> str:
-        if internal_url := InternalIngressData.load(self.internal_ingress).url:
-            return join(str(internal_url), "api/v0/hook/hydra")
+        if self._config.use_ingress_for_relations:
+            internal_url = InternalIngressData.load(self.internal_ingress).url
+            if internal_url:
+                return join(str(internal_url), "api/v0/hook/hydra")
         return (
             f"http://{self.app.name}.{self.model.name}.svc.cluster.local:{PORT}/api/v0/hook/hydra"
         )
@@ -663,7 +665,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
             openfga_store_id = openfga_data.store_id
             openfga_token = openfga_data.api_token
             version_data = self.peer_data[self._workload_service.version]
-            openfga_model_id = version_data.get(OPENFGA_MODEL_ID, "") if isinstance(version_data, dict) else ""
+            openfga_model_id = (
+                version_data.get(OPENFGA_MODEL_ID, "") if isinstance(version_data, dict) else ""
+            )
 
         try:
             stdout = self._cli.import_groups(
@@ -724,7 +728,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         database_config = DatabaseConfig.load(self.database_requirer)
 
         try:
-            self._cli.users_set_groups(dsn=database_config.dsn, user_id=user_id, group_ids=group_ids)
+            self._cli.users_set_groups(
+                dsn=database_config.dsn, user_id=user_id, group_ids=group_ids
+            )
             event.set_results({"result": f"Groups for user {user_id!r} updated."})
         except Exception as e:
             event.fail(f"Failed to set groups for user: {e}")
@@ -741,7 +747,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         database_config = DatabaseConfig.load(self.database_requirer)
 
         try:
-            self._cli.groups_add_users(dsn=database_config.dsn, group_id=group_id, user_ids=user_ids)
+            self._cli.groups_add_users(
+                dsn=database_config.dsn, group_id=group_id, user_ids=user_ids
+            )
             event.set_results({"result": f"Users added to group {group_id!r}."})
         except Exception as e:
             event.fail(f"Failed to add users to group: {e}")
@@ -758,7 +766,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         database_config = DatabaseConfig.load(self.database_requirer)
 
         try:
-            self._cli.groups_remove_users(dsn=database_config.dsn, group_id=group_id, user_ids=user_ids)
+            self._cli.groups_remove_users(
+                dsn=database_config.dsn, group_id=group_id, user_ids=user_ids
+            )
             event.set_results({"result": f"Users removed from group {group_id!r}."})
         except Exception as e:
             event.fail(f"Failed to remove users from group: {e}")

@@ -1395,3 +1395,78 @@ class TestCertificateEvents:
 
         mock_path.write_text.assert_called_with("some-ca-cert")
         mocked_subprocess_run.assert_called()
+
+
+class TestUseIngressForRelations:
+    def test_hydra_hook_url_with_use_ingress_for_relations_enabled_and_ingress(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        internal_route_integration: testing.Relation,
+    ) -> None:
+        hydra_relation = testing.Relation(
+            endpoint="hydra-token-hook",
+            interface="hydra_token_hook",
+            remote_app_name="hydra",
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[internal_route_integration, hydra_relation] + list(base_state.relations),
+            config={**base_state.config, "use_ingress_for_relations": True},
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        hydra_rel_out = state_out.get_relation(hydra_relation.id)
+        assert (
+            hydra_rel_out.local_app_data["url"]
+            == "http://some-host/test-model-hook-service/api/v0/hook/hydra"
+        )
+
+    def test_hydra_hook_url_with_use_ingress_for_relations_disabled_and_ingress(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        internal_route_integration: testing.Relation,
+    ) -> None:
+        hydra_relation = testing.Relation(
+            endpoint="hydra-token-hook",
+            interface="hydra_token_hook",
+            remote_app_name="hydra",
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[internal_route_integration, hydra_relation] + list(base_state.relations),
+            config={**base_state.config, "use_ingress_for_relations": False},
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        hydra_rel_out = state_out.get_relation(hydra_relation.id)
+        assert (
+            hydra_rel_out.local_app_data["url"]
+            == "http://hook-service.test-model.svc.cluster.local:8080/api/v0/hook/hydra"
+        )
+
+    def test_hydra_hook_url_with_use_ingress_for_relations_default_and_no_ingress(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        hydra_relation = testing.Relation(
+            endpoint="hydra-token-hook",
+            interface="hydra_token_hook",
+            remote_app_name="hydra",
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[hydra_relation] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        hydra_rel_out = state_out.get_relation(hydra_relation.id)
+        assert (
+            hydra_rel_out.local_app_data["url"]
+            == "http://hook-service.test-model.svc.cluster.local:8080/api/v0/hook/hydra"
+        )

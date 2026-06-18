@@ -41,6 +41,11 @@ class CharmConfig:
         """Check whether access control authorization is enabled."""
         return self._config.get("authorization_enabled", True)
 
+    @property
+    def use_ingress_for_relations(self) -> bool:
+        """Check whether ingress URL should be used for relation endpoints."""
+        return bool(self._config.get("use_ingress_for_relations", False))
+
     def to_env_vars(self) -> EnvVars:
         """Get config env vars."""
         env = {

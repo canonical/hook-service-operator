@@ -83,6 +83,12 @@ config:
         This configuration cannot be used with when the oauth integration exists.
       type: string
       default: ''
+    use_ingress_for_relations:
+      description: |
+        Use ingress URL for relation endpoints. When true, the internal-route ingress URL is passed
+        to in-cluster relations like Hydra. When false, the local Kubernetes service URL is preferred.
+      type: boolean
+      default: false
 
 actions:
   get-access-token:
