@@ -57,7 +57,7 @@ class WorkloadService:
 
     @property
     def version(self) -> str:
-        """Get the service version."""
+        """The service version."""
         if not self._version:
             self._version = self._cli.get_service_version() or ""
         return self._version
