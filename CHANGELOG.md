@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/canonical/hook-service-operator/compare/v1.1.1...v1.2.0) (2026-06-18)
+
+
+### Features
+
+* add flag to prefer in-cluster URLs to cross-cluster when internal-route is enabled ([44d8150](https://github.com/canonical/hook-service-operator/commit/44d8150ccdc4655337d1fb401a7fdefb01e82820))
+
+
+### Bug Fixes
+
+* bump version, enhance actions ([6e31fa9](https://github.com/canonical/hook-service-operator/commit/6e31fa95711e865faa63a8068be42c1c03f1916b))
+
 ## [1.1.1](https://github.com/canonical/hook-service-operator/compare/v1.1.0...v1.1.1) (2026-05-29)
 
 

@@ -65,5 +65,5 @@ class Secrets:
 
     @property
     def api_token(self) -> str:
-        """Get the api token."""
+        """The api token."""
         return self[API_TOKEN_SECRET_LABEL][API_TOKEN_SECRET_KEY]
