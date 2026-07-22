@@ -31,8 +31,8 @@ install `pre-commit`, `mypy` type checker, linting and formatting tools, as well
 as unit and integration test dependencies.
 
 ```shell
-tox devenv
-source venv/bin/activate
+uv sync --group dev
+source .venv/bin/activate
 ```
 
 ## Testing
