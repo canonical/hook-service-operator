@@ -13,7 +13,7 @@ dependencies = [
     "cosl~=1.10.2",
     "jinja2",
     "pydantic~=2.13.3",
-    "lightkube~=0.21.0",
+    "lightkube~=0.22.0",
     "lightkube-models~=1.35.0.8",
     "requests~=2.34.0",
     "jsonschema",
