@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.1](https://github.com/canonical/hook-service-operator/compare/v1.2.0...v1.2.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency cosl to ~=1.10.2 ([50c6a9e](https://github.com/canonical/hook-service-operator/commit/50c6a9e9753dff9a6e9b8bebda211be56ec56ee5))
+* **deps:** update dependency cosl to ~=1.10.2 ([#174](https://github.com/canonical/hook-service-operator/issues/174)) ([eed866d](https://github.com/canonical/hook-service-operator/commit/eed866d16d2d336cbd9cbadaa548967c4240c704))
+* **deps:** update dependency lightkube to ~=0.22.0 ([1e0b4e2](https://github.com/canonical/hook-service-operator/commit/1e0b4e29e7319060bc7d607d1d9bd4128d0e23f4))
+* **deps:** update dependency lightkube to ~=0.22.0 ([#175](https://github.com/canonical/hook-service-operator/issues/175)) ([a669588](https://github.com/canonical/hook-service-operator/commit/a6695889a37fd5ebae0dbe31b2f77f45a0c1f424))
+* **deps:** update dependency lightkube to v1 ([ebc9ca3](https://github.com/canonical/hook-service-operator/commit/ebc9ca38231c6839650355e87052768e6316e5ec))
+* **deps:** update dependency lightkube to v1 ([#183](https://github.com/canonical/hook-service-operator/issues/183)) ([7637483](https://github.com/canonical/hook-service-operator/commit/7637483741cf1b0d6d3787c60eb4801b6a6114b8))
+* **deps:** update dependency lightkube-models to ~=1.36.3.8 ([0974419](https://github.com/canonical/hook-service-operator/commit/09744199845fa5ea955f7baf14c553cfeb562947))
+* **deps:** update dependency lightkube-models to ~=1.36.3.8 ([#177](https://github.com/canonical/hook-service-operator/issues/177)) ([72ee62c](https://github.com/canonical/hook-service-operator/commit/72ee62ca8aecbf67cf43385597b5b3bea84d0984))
+
 ## [1.2.0](https://github.com/canonical/hook-service-operator/compare/v1.1.1...v1.2.0) (2026-06-18)
 
 
