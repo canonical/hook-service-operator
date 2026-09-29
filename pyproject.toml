@@ -10,7 +10,7 @@ readme = "README.md"
 license = {file = "LICENSE"}
 dependencies = [
     "ops ~=3.0",
-    "cosl~=1.10.2",
+    "cosl~=1.11.0",
     "jinja2",
     "pydantic~=2.13.3",
     "lightkube~=1.0.0",
