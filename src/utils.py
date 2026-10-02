@@ -117,11 +117,16 @@ def authentication_config_is_valid(charm: "HookServiceOperatorCharm") -> bool:
     return isinstance(status, ActiveStatus)
 
 
+def openfga_integration_exists_if_required(charm: "HookServiceOperatorCharm") -> bool:
+    """Check the OpenFGA integration exists when authorization needs it."""
+    return not charm._config.authorization_enabled or openfga_integration_exists(charm)
+
+
 # Condition failure causes early return without doing anything
 NOOP_CONDITIONS: tuple[Condition, ...] = (
     container_connectivity,
     database_integration_exists,
     database_resource_is_created,
-    openfga_integration_exists,
+    openfga_integration_exists_if_required,
     authentication_config_is_valid,
 )
