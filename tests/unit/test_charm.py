@@ -246,6 +246,45 @@ class TestHolisticHandler:
         assert state_out.unit_status == testing.ActiveStatus()
         assert layer.services.get("hook-service").environment["AUTHORIZATION_ENABLED"] is False
 
+    def test_when_authorization_disabled_without_openfga(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        internal_route_integration: testing.Relation,
+    ) -> None:
+        relations = [r for r in base_state.relations if r.endpoint != OPENFGA_INTEGRATION_NAME]
+        state_in = replace_state(
+            base_state,
+            relations=[internal_route_integration] + relations,
+            config={**base_state.config, "authorization_enabled": False},
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        layer = state_out.get_container("hook-service").layers["hook-service"]
+        assert state_out.unit_status == testing.ActiveStatus()
+        assert layer.services.get("hook-service").environment["AUTHORIZATION_ENABLED"] is False
+
+    def test_when_authorization_enabled_without_openfga(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        internal_route_integration: testing.Relation,
+    ) -> None:
+        relations = [r for r in base_state.relations if r.endpoint != OPENFGA_INTEGRATION_NAME]
+        state_in = replace_state(
+            base_state,
+            relations=[internal_route_integration] + relations,
+            config={**base_state.config, "authorization_enabled": True},
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        assert "hook-service" not in state_out.get_container("hook-service").layers
+        assert state_out.unit_status == testing.BlockedStatus(
+            f"Missing integration {OPENFGA_INTEGRATION_NAME}"
+        )
+
     def test_tenant_service_url_from_relation(
         self,
         context: testing.Context,
