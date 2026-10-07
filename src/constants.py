@@ -22,6 +22,7 @@ LOCAL_CHARM_CERTIFICATES_FILE = Path(LOCAL_CHARM_CERTIFICATES_PATH / "charm-cert
 # Application constants
 SERVICE_COMMAND = "hook-service serve"
 PORT = 8080
+GRPC_PORT = 9090
 OAUTH_GRANT_TYPES = ["client_credentials"]
 OAUTH_SCOPES = "openid"
 CERTIFICATES_PATH = Path("/etc/ssl/certs/")

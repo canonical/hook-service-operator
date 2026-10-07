@@ -212,6 +212,7 @@ class TestHolisticHandler:
             "TRACING_ENABLED": False,
             "LOG_LEVEL": "INFO",
             "PORT": "8080",
+            "GRPC_PORT": "9090",
             "API_TOKEN": api_token,
             "AUTHORIZATION_ENABLED": True,
             "OPENFGA_API_HOST": "openfga:8080",
