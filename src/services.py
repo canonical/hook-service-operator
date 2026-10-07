@@ -12,6 +12,7 @@ from ops.pebble import CheckStatus, Layer, LayerDict, ServiceInfo
 from cli import CommandLine
 from constants import (
     CERTIFICATES_FILE,
+    GRPC_PORT,
     LOCAL_CERTIFICATES_FILE,
     PEBBLE_READY_CHECK_NAME,
     PORT,
@@ -99,9 +100,14 @@ class WorkloadService:
 
         return c.failures > 0
 
-    def open_port(self) -> None:
-        """Open the service ports."""
+    def open_port(self, port: Optional[int] = None) -> None:
+        """Open the specified port, or the default HTTP and gRPC ports on the Juju unit."""
+        if port is not None:
+            self._unit.open_port(protocol="tcp", port=port)
+            return
+
         self._unit.open_port(protocol="tcp", port=PORT)
+        self._unit.open_port(protocol="tcp", port=GRPC_PORT)
 
     def create_openfga_model(self, openfga_data: OpenFGAIntegrationData) -> str:
         model_id = self._cli.create_openfga_model(

@@ -5,7 +5,7 @@
 
 from typing import Mapping, Protocol, TypeAlias, Union
 
-from constants import PORT
+from constants import GRPC_PORT, PORT
 
 EnvVars: TypeAlias = Mapping[str, Union[str, bool]]
 
@@ -15,6 +15,7 @@ DEFAULT_CONTAINER_ENV = {
     "TRACING_ENABLED": False,
     "LOG_LEVEL": "info",
     "PORT": str(PORT),
+    "GRPC_PORT": str(GRPC_PORT),
     "API_TOKEN": "",
     "AUTHORIZATION_ENABLED": False,
     "TENANT_SERVICE_URL": "",
