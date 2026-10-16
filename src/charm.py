@@ -565,7 +565,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
         token_endpoint = provider_info.token_endpoint
 
         try:
-            with HTTPClient(token_url=token_endpoint) as client:
+            with HTTPClient(token_url=token_endpoint, **self._config.get_proxy_config()) as client:
                 token = client.get_access_token(
                     client_id=client_id,
                     client_secret=client_secret,
@@ -592,7 +592,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
         provider_info = self.oauth_requirer.get_provider_info()
         token_url = provider_info.token_endpoint if provider_info else ""
         try:
-            with HTTPClient(token_url=token_url) as client:
+            with HTTPClient(token_url=token_url, **self._config.get_proxy_config()) as client:
                 access_token = self._get_access_token(client)
                 group_id = client.create_group(
                     name=name,
@@ -611,7 +611,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
         provider_info = self.oauth_requirer.get_provider_info()
         token_url = provider_info.token_endpoint if provider_info else ""
         try:
-            with HTTPClient(token_url=token_url) as client:
+            with HTTPClient(token_url=token_url, **self._config.get_proxy_config()) as client:
                 access_token = self._get_access_token(client)
                 client.delete_group(group_id=group_id, access_token=access_token)
                 event.set_results({"result": f"Group {group_id!r} deleted."})
@@ -623,7 +623,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
         provider_info = self.oauth_requirer.get_provider_info()
         token_url = provider_info.token_endpoint if provider_info else ""
         try:
-            with HTTPClient(token_url=token_url) as client:
+            with HTTPClient(token_url=token_url, **self._config.get_proxy_config()) as client:
                 access_token = self._get_access_token(client)
                 groups = client.list_groups(access_token=access_token)
                 event.set_results({"result": json.dumps(groups)})
