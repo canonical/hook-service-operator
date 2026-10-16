@@ -10,11 +10,24 @@ from constants import PORT
 
 
 class HTTPClient:
-    def __init__(self, token_url: str = "", base_url: str = f"http://localhost:{PORT}") -> None:
+    def __init__(
+        self,
+        token_url: str = "",
+        base_url: str = f"http://localhost:{PORT}",
+        http_proxy: str = "",
+        https_proxy: str = "",
+        no_proxy: str = "",
+    ) -> None:
         self._token_url = token_url.rstrip("/")
         self._base_url = base_url.rstrip("/")
         self._session = requests.Session()
         self._session.verify = False
+        # The token request goes through the proxy of the workload, unless no_proxy names the
+        # endpoint's host. The requests to the workload, on localhost, do not.
+        proxies = {k: v for k, v in {"http": http_proxy, "https": https_proxy}.items() if v}
+        if no_proxy and requests.utils.should_bypass_proxies(self._token_url, no_proxy=no_proxy):
+            proxies = {}
+        self._token_proxies = proxies or None
 
     def __enter__(self) -> Self:
         return self
@@ -34,6 +47,8 @@ class HTTPClient:
                 "grant_type": "client_credentials",
             },
             auth=(client_id, client_secret),
+            proxies=self._token_proxies,
+            timeout=10,
         )
         response.raise_for_status()
         token_data = response.json()
