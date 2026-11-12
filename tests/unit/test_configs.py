@@ -74,3 +74,21 @@ class TestCharmConfig:
             "use_ingress_for_relations": False,
         }
         assert CharmConfig(config_false, mocked_model).use_ingress_for_relations is False
+
+    def test_get_proxy_config(self, mocked_model: Model) -> None:
+        config = {
+            "log_level": "debug",
+            "http_proxy": "http://proxy:3128",
+            "https_proxy": "http://proxy:3128",
+            "no_proxy": "localhost",
+        }
+        assert CharmConfig(config, mocked_model).get_proxy_config() == {
+            "http_proxy": "http://proxy:3128",
+            "https_proxy": "http://proxy:3128",
+            "no_proxy": "localhost",
+        }
+        assert CharmConfig({"log_level": "debug"}, mocked_model).get_proxy_config() == {
+            "http_proxy": "",
+            "https_proxy": "",
+            "no_proxy": "",
+        }
