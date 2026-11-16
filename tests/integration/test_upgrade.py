@@ -54,6 +54,7 @@ def test_deploy_stable(
         app=DB_APP,
         channel="14/stable",
         trust=True,
+        force=True,
     )
 
     # Integrate
