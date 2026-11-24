@@ -107,6 +107,16 @@ def grpc_route_integration() -> testing.Relation:
     )
 
 
+@pytest.fixture
+def groups_api_relation() -> testing.Relation:
+    return testing.Relation(
+        endpoint="groups-api",
+        interface="groups_api",
+        remote_app_name="jaas",
+        remote_app_data={"subject": "jaas-client-id"},
+    )
+
+
 @pytest.fixture()
 def api_token() -> str:
     return "secret"

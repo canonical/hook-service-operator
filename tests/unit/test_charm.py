@@ -359,6 +359,210 @@ class TestGrpcRouteEvents:
         assert "static" in grpc_out.local_app_data
 
 
+class TestGroupsApiEvents:
+    def test_relation_changed_without_grpc_route_publishes_in_cluster_and_subjects(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+        oauth_relation: testing.Relation,
+    ) -> None:
+        client_secret = testing.Secret(
+            id="hook-service-client-secret",
+            tracked_content={"secret": "supersecret"},
+            latest_content={"secret": "supersecret"},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[groups_api_relation, oauth_relation] + list(base_state.relations),
+            config={**base_state.config, "authn_allowed_subjects": "user1"},
+            secrets=[client_secret] + list(base_state.secrets),
+        )
+
+        state_out = context.run(context.on.relation_changed(groups_api_relation), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.get_relation(groups_api_relation.id).local_app_data == {
+            "grpc_address": "hook-service.test-model.svc.cluster.local:9090",
+            "tls_enabled": "false",
+        }
+        env = (
+            state_out
+            .get_container(WORKLOAD_CONTAINER)
+            .layers["hook-service"]
+            .services["hook-service"]
+            .environment
+        )
+        assert env["AUTHENTICATION_ALLOWED_SUBJECTS"] == (
+            "hook-service-client-id,jaas-client-id,user1"
+        )
+
+    def test_relation_changed_with_grpc_route_publishes_external_tls(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            relations=[groups_api_relation, grpc_route_integration] + list(base_state.relations),
+            config={**base_state.config, "authn_issuer": "https://auth.example.com"},
+        )
+
+        state_out = context.run(context.on.relation_changed(groups_api_relation), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.get_relation(groups_api_relation.id).local_app_data == {
+            "grpc_address": "some-grpc-host:9090",
+            "tls_enabled": "true",
+        }
+
+    def test_relation_changed_with_grpc_route_missing_external_host_waits(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+    ) -> None:
+        pending_grpc_route = testing.Relation(
+            endpoint="grpc-route",
+            interface="traefik_route",
+            remote_app_name="traefik-grpc",
+            remote_app_data={},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[groups_api_relation, pending_grpc_route] + list(base_state.relations),
+            config={**base_state.config, "authn_issuer": "https://auth.example.com"},
+        )
+
+        state_out = context.run(context.on.relation_changed(groups_api_relation), state_in)
+
+        assert state_out.unit_status == testing.WaitingStatus(
+            "Waiting for grpc-route external host"
+        )
+        assert state_out.get_relation(groups_api_relation.id).local_app_data == {}
+
+    def test_grpc_route_broken_updates_groups_api_to_in_cluster(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            relations=[groups_api_relation, grpc_route_integration] + list(base_state.relations),
+            config={**base_state.config, "authn_issuer": "https://auth.example.com"},
+        )
+
+        state_out = context.run(context.on.relation_broken(grpc_route_integration), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        assert state_out.get_relation(groups_api_relation.id).local_app_data == {
+            "grpc_address": "hook-service.test-model.svc.cluster.local:9090",
+            "tls_enabled": "false",
+        }
+
+    def test_multiple_consumers_and_departure_updates_allowed_subjects(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+    ) -> None:
+        second_consumer = testing.Relation(
+            endpoint="groups-api",
+            interface="groups_api",
+            remote_app_name="other-consumer",
+            remote_app_data={"subject": "other-client-id"},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[groups_api_relation, second_consumer] + list(base_state.relations),
+            config={**base_state.config, "authn_issuer": "https://auth.example.com"},
+        )
+
+        state_mid = context.run(context.on.relation_changed(second_consumer), state_in)
+        env_mid = (
+            state_mid
+            .get_container(WORKLOAD_CONTAINER)
+            .layers["hook-service"]
+            .services["hook-service"]
+            .environment
+        )
+        assert env_mid["AUTHENTICATION_ALLOWED_SUBJECTS"] == "jaas-client-id,other-client-id"
+
+        rel_to_break = state_mid.get_relation(second_consumer.id)
+        state_out = context.run(context.on.relation_broken(rel_to_break), state_mid)
+        env_out = (
+            state_out
+            .get_container(WORKLOAD_CONTAINER)
+            .layers["hook-service"]
+            .services["hook-service"]
+            .environment
+        )
+        assert env_out["AUTHENTICATION_ALLOWED_SUBJECTS"] == "jaas-client-id"
+
+    def test_groups_api_without_auth_blocks_and_withholds(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            relations=[groups_api_relation] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.relation_changed(groups_api_relation), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            "Missing authentication configuration for groups-api"
+        )
+        assert state_out.get_relation(groups_api_relation.id).local_app_data == {}
+
+    def test_groups_api_with_pending_oauth_waits_and_withholds(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+    ) -> None:
+        pending_oauth = testing.Relation(
+            endpoint="oauth",
+            interface="oauth",
+            remote_app_name="hydra",
+            remote_app_data={},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[groups_api_relation, pending_oauth] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.relation_changed(groups_api_relation), state_in)
+
+        assert state_out.unit_status == testing.WaitingStatus(
+            "Waiting for OAuth integration readiness"
+        )
+        assert state_out.get_relation(groups_api_relation.id).local_app_data == {}
+
+    def test_non_leader_skips_databag_writes(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        groups_api_relation: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            leader=False,
+            relations=[groups_api_relation] + list(base_state.relations),
+            config={**base_state.config, "authn_issuer": "https://auth.example.com"},
+        )
+
+        state_out = context.run(context.on.relation_changed(groups_api_relation), state_in)
+
+        assert state_out.get_relation(groups_api_relation.id).local_app_data == {}
+
+
 class TestHolisticHandler:
     def test_when_container_not_connected(
         self,
