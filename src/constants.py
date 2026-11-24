@@ -30,6 +30,7 @@ CERTIFICATES_FILE = Path(CERTIFICATES_PATH / "ca-certificates.crt")
 
 # Integration constants
 INTERNAL_ROUTE_INTEGRATION_NAME = "internal-route"
+GRPC_ROUTE_INTEGRATION_NAME = "grpc-route"
 PROMETHEUS_SCRAPE_INTEGRATION_NAME = "metrics-endpoint"
 LOGGING_INTEGRATION_NAME = "logging"
 GRAFANA_DASHBOARD_INTEGRATION_NAME = "grafana-dashboard"

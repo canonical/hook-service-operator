@@ -253,6 +253,13 @@ requires:
     description: |
       Allows the charm to be exposed for cross-cluster communication, needed
       for cases where network topology is more complex than just one k8s cluster
+  grpc-route:
+    interface: traefik_route
+    limit: 1
+    optional: true
+    description: |
+      Allows the charm gRPC server to be exposed via an internal Traefik
+      controller for cross-cluster communication.
   pg-database:
     interface: postgresql_client
     optional: false
