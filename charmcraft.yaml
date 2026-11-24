@@ -305,6 +305,12 @@ provides:
     interface: hydra_token_hook
     optional: true
     description: Used to configure the hydra token hook
+  groups-api:
+    interface: groups_api
+    optional: true
+    description: |
+      Provides the hook-service gRPC endpoint and dynamically authorizes
+      integrated consumers' OIDC subjects.
 
 peers:
   hook-service:

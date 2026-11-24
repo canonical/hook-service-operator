@@ -20,6 +20,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseRequires,
 )
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+from charms.hook_service.v0.groups_api import GroupsApiProvider
 from charms.hydra.v0.hydra_token_hook import HydraHookProvider
 from charms.hydra.v0.oauth import OAuthInfoChangedEvent, OAuthInfoRemovedEvent, OAuthRequirer
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
@@ -48,6 +49,7 @@ from constants import (
     CERTIFICATE_TRANSFER_INTEGRATION_NAME,
     DATABASE_INTEGRATION_NAME,
     GRAFANA_DASHBOARD_INTEGRATION_NAME,
+    GROUPS_API_INTEGRATION_NAME,
     GRPC_ROUTE_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
     LOCAL_CERTIFICATES_PATH,
@@ -74,6 +76,7 @@ from exceptions import (
 )
 from integrations import (
     DatabaseConfig,
+    GroupsApiIntegration,
     GrpcRouteIntegration,
     HydraHookIntegration,
     InternalIngressData,
@@ -93,6 +96,7 @@ from utils import (
     container_connectivity,
     database_integration_exists,
     database_resource_is_created,
+    groups_api_waiting_for_grpc_route,
     migration_is_ready,
     openfga_integration_exists,
     peer_integration_exists,
@@ -140,6 +144,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
         )
 
         self.grpc_route = GrpcRouteIntegration(self)
+        self.groups_api_provider = GroupsApiProvider(
+            self, relation_name=GROUPS_API_INTEGRATION_NAME
+        )
+        self.groups_api = GroupsApiIntegration(self.groups_api_provider)
 
         self.metrics_endpoint = MetricsEndpointProvider(
             self,
@@ -288,6 +296,20 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._on_grpc_route_changed,
         )
 
+        # groups-api
+        self.framework.observe(
+            self.groups_api_provider.on.ready,
+            self._on_groups_api_changed,
+        )
+        self.framework.observe(
+            self.groups_api_provider.on.subject_changed,
+            self._on_groups_api_changed,
+        )
+        self.framework.observe(
+            self.groups_api_provider.on.unavailable,
+            self._on_groups_api_changed,
+        )
+
         self.framework.observe(
             self.openfga_requirer.on.openfga_store_created,
             self._on_openfga_store_created,
@@ -305,6 +327,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             allowed_scope=oauth_config.get("authn_allowed_scope") or "",
             jwks_url=oauth_config.get("authn_jwks_url") or "",
             issuer=oauth_config.get("authn_issuer") or "",
+            extra_subjects=self.groups_api.get_allowed_subjects(),
         )
 
         return self._pebble_service.render_pebble_layer(
@@ -368,6 +391,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
     def _ensure_grpc_ingress(self) -> bool:
         self.grpc_route.submit_to_traefik()
+        return True
+
+    def _ensure_groups_api_relation(self) -> bool:
+        self.groups_api.update_relation_data()
         return True
 
     def _ensure_database_migration(self) -> bool:
@@ -445,6 +472,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
         self.grpc_route.set_relation(event.relation)
         self._holistic_handler(event)
 
+    def _on_groups_api_changed(self, event: ops.EventBase) -> None:
+        self._holistic_handler(event)
+
     def _on_hydra_hook_ready(self, event: ops.RelationEvent) -> None:
         self._holistic_handler(event)
 
@@ -515,6 +545,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._ensure_hydra_relation,
             self._ensure_internal_ingress,
             self._ensure_grpc_ingress,
+            self._ensure_groups_api_relation,
             self._ensure_database_migration,
             self._ensure_openfga_model,
             self._ensure_tls,
@@ -553,6 +584,9 @@ class HookServiceOperatorCharm(ops.CharmBase):
             event.add_status(ops.WaitingStatus("Container is not connected yet"))
 
         event.add_status(authentication_config_status(self))
+
+        if groups_api_waiting_for_grpc_route(self):
+            event.add_status(ops.WaitingStatus("Waiting for grpc-route external host"))
 
         if not self._secrets.is_ready():
             event.add_status(ops.WaitingStatus("Waiting for secrets creation"))
