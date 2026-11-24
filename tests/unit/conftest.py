@@ -98,6 +98,24 @@ def internal_route_integration(internal_route_integration_data: dict) -> testing
     )
 
 
+@pytest.fixture
+def grpc_route_integration_data() -> dict:
+    return {
+        "external_host": "some-grpc-host",
+        "scheme": "https",
+    }
+
+
+@pytest.fixture
+def grpc_route_integration(grpc_route_integration_data: dict) -> testing.Relation:
+    return testing.Relation(
+        endpoint="grpc-route",
+        interface="traefik_route",
+        remote_app_name="traefik-grpc",
+        remote_app_data=grpc_route_integration_data,
+    )
+
+
 @pytest.fixture()
 def api_token() -> str:
     return "secret"

@@ -15,3 +15,5 @@ OPENFGA_CHARM = "openfga-k8s"
 OPENFGA_APP = "openfga"
 INGRESS_DOMAIN = "public"
 INTERNAL_ROUTE_INTEGRATION_NAME = "internal-route"
+GRPC_ROUTE_INTEGRATION_NAME = "grpc-route"
+GRPC_PORT = 9090
