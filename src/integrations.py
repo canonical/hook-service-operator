@@ -23,11 +23,14 @@ from charms.openfga_k8s.v1.openfga import OpenFGARequires
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from jinja2 import Template
+from ops import CharmBase, Relation
 from ops.model import Model
 from pydantic import AnyHttpUrl
 
 from constants import (
     CERTIFICATE_TRANSFER_INTEGRATION_NAME,
+    GRPC_PORT,
+    GRPC_ROUTE_INTEGRATION_NAME,
     HYDRA_TOKEN_HOOK_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
     OAUTH_GRANT_TYPES,
@@ -97,6 +100,64 @@ class InternalIngressData:
     @property
     def secured(self) -> bool:
         return self.url is not None and self.url.scheme == "https"
+
+
+class GrpcRouteIntegration:
+    """Manage the grpc-route Traefik integration."""
+
+    STATIC_CONFIG: dict[str, Any] = {
+        "entryPoints": {
+            "grpc": {
+                "address": f":{GRPC_PORT}",
+            }
+        }
+    }
+
+    def __init__(
+        self,
+        charm: CharmBase,
+        requirer: Optional[TraefikRouteRequirer] = None,
+    ) -> None:
+        self._charm = charm
+        self.requirer = requirer or TraefikRouteRequirer(
+            charm,
+            charm.model.get_relation(GRPC_ROUTE_INTEGRATION_NAME),  # type: ignore[arg-type]
+            GRPC_ROUTE_INTEGRATION_NAME,
+            raw=False,
+        )
+
+    def set_relation(self, relation: Relation) -> None:
+        """Sync the underlying TraefikRouteRequirer relation reference."""
+        self.requirer._relation = relation
+
+    def is_ready(self) -> bool:
+        """Check whether an active grpc-route relation is present."""
+        if not self.requirer.is_ready():
+            return False
+        relation = self.requirer._relation
+        return bool(relation and relation.active and relation.app is not None)
+
+    def _load_config(self) -> dict[str, Any]:
+        with open("templates/grpc-route.json.j2", "r") as file:
+            template = Template(file.read())
+
+        return json.loads(
+            template.render(
+                model=self._charm.model.name,
+                app=self._charm.app.name,
+                port=GRPC_PORT,
+            )
+        )
+
+    def submit_to_traefik(self) -> None:
+        """Publish static entrypoint and dynamic TCP config to Traefik from the leader unit."""
+        if not self._charm.unit.is_leader() or not self.is_ready():
+            return
+
+        self.requirer.submit_to_traefik(
+            config=self._load_config(),
+            static=self.STATIC_CONFIG,
+        )
 
 
 @dataclass(frozen=True)
