@@ -3,15 +3,20 @@
 # See LICENSE file for licensing details.
 
 import logging
+import socket
+import ssl
 from pathlib import Path
 
 import jubilant
 import pytest
 import requests
+import yaml
 from integration.constants import (
     APP_NAME,
     DB_APP,
     DB_CHARM,
+    GRPC_PORT,
+    GRPC_ROUTE_INTEGRATION_NAME,
     INGRESS_DOMAIN,
     METADATA,
     OPENFGA_APP,
@@ -20,6 +25,7 @@ from integration.constants import (
     TRAEFIK_CHARM,
 )
 from integration.utils import (
+    get_unit_data,
     remove_integration,
     unit_address,
     wait_for_active_idle,
@@ -46,6 +52,7 @@ def test_build_and_deploy(
         resources=resources,
         app=APP_NAME,
         config=charm_config,
+        trust=True,
     )
 
     model.deploy(
@@ -71,6 +78,7 @@ def test_build_and_deploy(
     )
 
     model.integrate(TRAEFIK_APP, f"{APP_NAME}:internal-route")
+    model.integrate(TRAEFIK_APP, f"{APP_NAME}:{GRPC_ROUTE_INTEGRATION_NAME}")
     model.integrate(DB_APP, APP_NAME)
     model.integrate(f"{DB_APP}:database", f"{OPENFGA_APP}:database")
     model.integrate(OPENFGA_APP, f"{APP_NAME}:openfga")
@@ -104,6 +112,35 @@ def test_ingress_route(
     resp.raise_for_status()
 
 
+def test_grpc_route(model: jubilant.Juju) -> None:
+    """Test gRPC TCP routing through Traefik on port 9090."""
+    traefik_unit_data = get_unit_data(model, f"{TRAEFIK_APP}/0")
+    grpc_relations = [
+        rel["application-data"]
+        for rel in traefik_unit_data["relation-info"]
+        if rel["endpoint"] == "traefik-route" and "static" in rel.get("application-data", {})
+    ]
+    assert len(grpc_relations) == 1
+    static_cfg = yaml.safe_load(grpc_relations[0]["static"])
+    assert static_cfg == {"entryPoints": {"grpc": {"address": f":{GRPC_PORT}"}}}
+
+    address = unit_address(model, app_name=TRAEFIK_APP, unit_num=0)
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    ssl_ctx.set_alpn_protocols(["h2"])
+
+    with socket.create_connection((address, GRPC_PORT), timeout=10) as raw_sock:
+        with ssl_ctx.wrap_socket(raw_sock, server_hostname=INGRESS_DOMAIN) as tls_sock:
+            assert tls_sock.selected_alpn_protocol() == "h2"
+            tls_sock.sendall(
+                b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\x00\x00\x04\x00\x00\x00\x00\x00"
+            )
+            header = tls_sock.recv(9)
+            assert len(header) == 9
+            assert header[3] == 0x04
+
+
 def test_groups_api(
     model: jubilant.Juju,
     http_client: requests.Session,
@@ -126,6 +163,7 @@ def test_scaling_up(model: jubilant.Juju) -> None:
     "remote_app_name,integration_name,expected_status",
     [
         (TRAEFIK_APP, "internal-route", "active"),
+        (TRAEFIK_APP, GRPC_ROUTE_INTEGRATION_NAME, "active"),
         (DB_APP, "pg-database", "blocked"),
     ],
 )

@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Protocol, TypeVar
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 from ops import StatusBase, testing
 from pytest_mock import MockerFixture
 
@@ -42,6 +43,18 @@ class TestPebbleReadyEvent:
         mocked_open_port.assert_called_once()
         mocked_charm_holistic_handler.assert_called_once()
         assert state_out.workload_version == mocked_workload_service_version.return_value
+
+    def test_opens_http_and_grpc_ports(
+        self,
+        context: testing.Context,
+        container: testing.Container,
+        base_state: testing.State,
+        mocked_charm_holistic_handler: MagicMock,
+        mocked_workload_service_version: MagicMock,
+    ) -> None:
+        state_out = context.run(context.on.pebble_ready(container), base_state)
+
+        assert state_out.opened_ports == {testing.TCPPort(8080), testing.TCPPort(9090)}
 
 
 class TestAuthn:
@@ -162,6 +175,133 @@ class TestIngressRevokedEvent:
         state_out = context.run(context.on.relation_broken(internal_route_integration), state_in)
 
         assert state_out.unit_status == testing.ActiveStatus()
+
+
+class TestGrpcRouteEvents:
+    def test_relation_joined_before_remote_host_set(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        grpc_relation = testing.Relation(
+            endpoint="grpc-route",
+            interface="traefik_route",
+            remote_app_name="traefik-grpc",
+            remote_app_data={},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[grpc_relation] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.relation_joined(grpc_relation), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        rel_out = state_out.get_relation(grpc_relation.id)
+        assert rel_out.local_app_data["raw"] == "False"
+        assert yaml.safe_load(rel_out.local_app_data["static"]) == {
+            "entryPoints": {"grpc": {"address": ":9090"}}
+        }
+        dynamic_cfg = yaml.safe_load(rel_out.local_app_data["config"])
+        assert dynamic_cfg == {
+            "tcp": {
+                "routers": {
+                    "juju-test-model-hook-service-grpc-router": {
+                        "entryPoints": ["grpc"],
+                        "rule": "HostSNI(`*`)",
+                        "service": "juju-test-model-hook-service-grpc-service",
+                        "tls": {"passthrough": False},
+                    }
+                },
+                "services": {
+                    "juju-test-model-hook-service-grpc-service": {
+                        "loadBalancer": {
+                            "servers": [
+                                {"address": "hook-service.test-model.svc.cluster.local:9090"}
+                            ]
+                        }
+                    }
+                },
+            }
+        }
+
+    def test_relation_joined_non_leader_skips_write(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            leader=False,
+            relations=[grpc_route_integration] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.relation_joined(grpc_route_integration), state_in)
+
+        rel_out = state_out.get_relation(grpc_route_integration.id)
+        assert rel_out.local_app_data == {}
+
+    def test_relation_changed(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            relations=[grpc_route_integration] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.relation_changed(grpc_route_integration), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        rel_out = state_out.get_relation(grpc_route_integration.id)
+        assert rel_out.local_app_data["raw"] == "False"
+        assert "config" in rel_out.local_app_data
+        assert "static" in rel_out.local_app_data
+
+    def test_relation_broken(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            relations=[grpc_route_integration] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.relation_broken(grpc_route_integration), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        rel_out = state_out.get_relation(grpc_route_integration.id)
+        assert rel_out.local_app_data == {}
+
+    def test_coexistence_with_internal_route(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        internal_route_integration: testing.Relation,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        state_in = replace_state(
+            base_state,
+            relations=[internal_route_integration, grpc_route_integration]
+            + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        internal_out = state_out.get_relation(internal_route_integration.id)
+        grpc_out = state_out.get_relation(grpc_route_integration.id)
+        assert internal_out.local_app_data["raw"] == "True"
+        assert "http" in yaml.safe_load(internal_out.local_app_data["config"])
+        assert "static" not in internal_out.local_app_data
+        assert grpc_out.local_app_data["raw"] == "False"
+        assert "tcp" in yaml.safe_load(grpc_out.local_app_data["config"])
+        assert "static" in grpc_out.local_app_data
 
 
 class TestHolisticHandler:
