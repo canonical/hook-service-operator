@@ -68,6 +68,41 @@ juju integrate hook-service:hydra-token-hook hydra
 
 Once the charms reach an active state, any users that try to log in to the identity-platform will have groups in their access tokens pulled from salesforce.
 
+### Exposing gRPC (`grpc-route`)
+
+The Hook Service listens for HTTP traffic on port `8080` and plaintext HTTP/2 (`h2c`) gRPC traffic on port `9090`. Both TCP ports are opened on the Kubernetes Service by default for in-cluster clients.
+
+To expose the gRPC endpoint across clusters through an internal `traefik-k8s` controller, relate `hook-service:grpc-route` to Traefik:
+
+```console
+juju integrate hook-service:grpc-route traefik
+```
+
+This relation configures Traefik with a `grpc` entrypoint on `:9090` and a wildcard `HostSNI(*)` TCP router that terminates TLS (`ALPN: h2`) and forwards plaintext `h2c` traffic to the service on port `9090`.
+
+> **Note:** `grpc-route` is optional and independent from `internal-route`. Because `HostSNI(*)` claims port `9090` on the related Traefik instance, use a dedicated internal Traefik application if multiple charms expose `:9090`.
+
+#### Rollout and Rollback
+
+1. Refresh or deploy the charm so units open TCP port `9090`:
+
+   ```console
+   juju refresh hook-service
+   ```
+
+2. Relate `hook-service:grpc-route` to the internal `traefik-k8s` application (this triggers a one-time Traefik restart for the `:9090` entrypoint):
+
+   ```console
+   juju integrate hook-service:grpc-route traefik
+   ```
+
+3. Verify TLS + `h2` ALPN connectivity to `<traefik-ip>:9090`.
+4. To roll back, remove the relation:
+
+   ```console
+   juju remove-relation hook-service:grpc-route traefik
+   ```
+
 ### Securing the API
 
 The charm supports securing the API using an OAuth provider (like Hydra). When enabled, all API requests must be authenticated with a valid Bearer token.
