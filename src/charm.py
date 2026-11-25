@@ -276,10 +276,6 @@ class HookServiceOperatorCharm(ops.CharmBase):
 
         # grpc route
         self.framework.observe(
-            self.grpc_route.requirer.on.ready,
-            self._on_grpc_route_changed,
-        )
-        self.framework.observe(
             self.on[GRPC_ROUTE_INTEGRATION_NAME].relation_joined,
             self._on_grpc_route_changed,
         )
