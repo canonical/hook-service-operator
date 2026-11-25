@@ -9,6 +9,7 @@ from pathlib import Path
 import jubilant
 import pytest
 import requests
+import yaml
 from integration.constants import (
     APP_NAME,
     DB_APP,

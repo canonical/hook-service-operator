@@ -402,11 +402,16 @@ class TestGroupsApiEvents:
         context: testing.Context,
         base_state: testing.State,
         groups_api_relation: testing.Relation,
-        grpc_route_integration: testing.Relation,
     ) -> None:
+        published_grpc_route = testing.Relation(
+            endpoint="grpc-route",
+            interface="traefik_route",
+            remote_app_name="traefik-grpc",
+            remote_app_data={"external_host": "some-grpc-host"},
+        )
         state_in = replace_state(
             base_state,
-            relations=[groups_api_relation, grpc_route_integration] + list(base_state.relations),
+            relations=[groups_api_relation, published_grpc_route] + list(base_state.relations),
             config={**base_state.config, "authn_issuer": "https://auth.example.com"},
         )
 
