@@ -11,7 +11,11 @@ import yaml
 from ops import StatusBase, testing
 from pytest_mock import MockerFixture
 
-from constants import OPENFGA_INTEGRATION_NAME, WORKLOAD_CONTAINER
+from constants import (
+    DATABASE_INTEGRATION_NAME,
+    OPENFGA_INTEGRATION_NAME,
+    WORKLOAD_CONTAINER,
+)
 from exceptions import MigrationCheckError, MigrationError
 
 
@@ -267,16 +271,67 @@ class TestGrpcRouteEvents:
         base_state: testing.State,
         grpc_route_integration: testing.Relation,
     ) -> None:
+        populated_integration = dataclasses.replace(
+            grpc_route_integration,
+            local_app_data={
+                "raw": "False",
+                "config": yaml.safe_dump({"tcp": {}}),
+                "static": yaml.safe_dump({"entryPoints": {"grpc": {"address": ":9090"}}}),
+            },
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[populated_integration] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.relation_broken(populated_integration), state_in)
+
+        assert state_out.unit_status == testing.ActiveStatus()
+        rel_out = state_out.get_relation(populated_integration.id)
+        # The charm must not rewrite the departing relation's databag; Juju
+        # destroys the relation and Traefik withdraws the route on teardown.
+        assert rel_out.local_app_data == populated_integration.local_app_data
+
+    def test_noop_conditions_gate_submission(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        """No grpc-route config is published while NOOP conditions fail."""
+        relations = [r for r in base_state.relations if r.endpoint != DATABASE_INTEGRATION_NAME]
+        state_in = replace_state(
+            base_state,
+            relations=[grpc_route_integration] + relations,
+        )
+
+        state_out = context.run(context.on.relation_changed(grpc_route_integration), state_in)
+
+        assert state_out.unit_status == testing.BlockedStatus(
+            f"Missing integration {DATABASE_INTEGRATION_NAME}"
+        )
+        rel_out = state_out.get_relation(grpc_route_integration.id)
+        assert rel_out.local_app_data == {}
+
+    def test_leader_elected_republishes(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        grpc_route_integration: testing.Relation,
+    ) -> None:
+        """The leader republishes the grpc-route config on leader-elected."""
         state_in = replace_state(
             base_state,
             relations=[grpc_route_integration] + list(base_state.relations),
         )
 
-        state_out = context.run(context.on.relation_broken(grpc_route_integration), state_in)
+        state_out = context.run(context.on.leader_elected(), state_in)
 
         assert state_out.unit_status == testing.ActiveStatus()
         rel_out = state_out.get_relation(grpc_route_integration.id)
-        assert rel_out.local_app_data == {}
+        assert rel_out.local_app_data["raw"] == "False"
+        assert "config" in rel_out.local_app_data
+        assert "static" in rel_out.local_app_data
 
     def test_coexistence_with_internal_route(
         self,
