@@ -364,12 +364,16 @@ class OAuthIntegration:
 class TenantServiceInfoData:
     """The data source from the tenant-service-info integration."""
 
-    service_url: str = ""
+    grpc_url: str = ""
 
     def to_env_vars(self) -> EnvVars:
         """Get tenant service env vars."""
+        parsed = urlparse(self.grpc_url) if self.grpc_url else None
         return {
-            "TENANT_SERVICE_URL": self.service_url,
+            "TENANT_SERVICE_GRPC_ADDRESS": (
+                parsed.netloc if parsed and parsed.netloc else self.grpc_url
+            ),
+            "TENANT_SERVICE_TLS_ENABLED": bool(parsed and parsed.scheme in ("https", "grpcs")),
         }
 
     @classmethod
@@ -381,7 +385,7 @@ class TenantServiceInfoData:
             return cls()
         if not relation.app:
             return cls()
-        return cls(service_url=relation.data[relation.app].get("service_url", ""))
+        return cls(grpc_url=relation.data[relation.app].get("grpc_url", ""))
 
 
 @dataclass(frozen=True)
