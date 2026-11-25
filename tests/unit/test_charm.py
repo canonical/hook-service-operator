@@ -226,7 +226,9 @@ class TestHolisticHandler:
             "AUTHENTICATION_ALLOWED_SUBJECTS": "",
             "AUTHENTICATION_REQUIRED_SCOPE": "",
             "AUTHENTICATION_JWKS_URL": "",
-            "TENANT_SERVICE_URL": "",
+            "TENANT_SERVICE_GRPC_ADDRESS": "",
+            "TENANT_SERVICE_TLS_ENABLED": False,
+            "TENANT_SERVICE_GRPC_TIMEOUT": "5s",
         }
 
     def test_when_authorization_disabled(
@@ -286,7 +288,7 @@ class TestHolisticHandler:
             f"Missing integration {OPENFGA_INTEGRATION_NAME}"
         )
 
-    def test_tenant_service_url_from_relation(
+    def test_tenant_service_grpc_env_from_relation(
         self,
         context: testing.Context,
         base_state: testing.State,
@@ -309,7 +311,32 @@ class TestHolisticHandler:
 
         layer = state_out.get_container("hook-service").layers["hook-service"]
         env = layer.services.get("hook-service").environment  # type: ignore
-        assert env["TENANT_SERVICE_URL"] == "http://tenant-service:8000"
+        assert env["TENANT_SERVICE_GRPC_ADDRESS"] == "tenant-service:50051"
+        assert env["TENANT_SERVICE_TLS_ENABLED"] is False
+        assert env["TENANT_SERVICE_GRPC_TIMEOUT"] == "5s"
+
+    def test_tenant_service_grpc_tls_from_https_scheme(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        tenant_service_info_relation = testing.Relation(
+            endpoint="tenant-service-info",
+            interface="tenant_service_info",
+            remote_app_name="tenant-service",
+            remote_app_data={"grpc_url": "https://tenant-service:50051"},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[tenant_service_info_relation] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        layer = state_out.get_container("hook-service").layers["hook-service"]
+        env = layer.services.get("hook-service").environment  # type: ignore
+        assert env["TENANT_SERVICE_GRPC_ADDRESS"] == "tenant-service:50051"
+        assert env["TENANT_SERVICE_TLS_ENABLED"] is True
 
     def test_migration_needed_not_leader(
         self,
