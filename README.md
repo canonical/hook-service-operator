@@ -72,6 +72,8 @@ Once the charms reach an active state, any users that try to log in to the ident
 
 The Hook Service listens for HTTP traffic on port `8080` and plaintext HTTP/2 (`h2c`) gRPC traffic on port `9090`. Both TCP ports are opened on the Kubernetes Service by default for in-cluster clients.
 
+> **Warning:** With the default configuration (`authentication_enabled: false`), the gRPC `GroupsMappingService` methods (`GetGroupsForUser`, `GetUsersInGroup`) are served **unauthenticated**. Relating `grpc-route` exposes them to any client that can reach the Traefik endpoint. Configure authentication first — see [Securing the API](#securing-the-api) — before relating `grpc-route`.
+
 To expose the gRPC endpoint across clusters through an internal `traefik-k8s` controller, relate `hook-service:grpc-route` to Traefik:
 
 ```console
@@ -80,17 +82,17 @@ juju integrate hook-service:grpc-route traefik
 
 This relation configures Traefik with a `grpc` entrypoint on `:9090` and a wildcard `HostSNI(*)` TCP router that terminates TLS (`ALPN: h2`) and forwards plaintext `h2c` traffic to the service on port `9090`.
 
-> **Note:** `grpc-route` is optional and independent from `internal-route`. Because `HostSNI(*)` claims port `9090` on the related Traefik instance, use a dedicated internal Traefik application if multiple charms expose `:9090`.
+> **Note:** `grpc-route` is optional and independent from `internal-route`. Because `HostSNI(*)` claims port `9090` on the related Traefik instance, use a dedicated internal Traefik application if multiple charms expose `:9090`. This requires the `hook-service` workload image `>= v1.4.0`; earlier images do not listen on `:9090`.
 
 #### Rollout and Rollback
 
-1. Refresh or deploy the charm so units open TCP port `9090`:
+1. Refresh or deploy the charm so units open TCP port `9090` (requires workload image `hook-service >= v1.4.0`):
 
    ```console
    juju refresh hook-service
    ```
 
-2. Relate `hook-service:grpc-route` to the internal `traefik-k8s` application (this triggers a one-time Traefik restart for the `:9090` entrypoint):
+2. Relate `hook-service:grpc-route` to the internal `traefik-k8s` application (this restarts Traefik to add the `:9090` entrypoint):
 
    ```console
    juju integrate hook-service:grpc-route traefik
@@ -102,6 +104,8 @@ This relation configures Traefik with a `grpc` entrypoint on `:9090` and a wildc
    ```console
    juju remove-relation hook-service:grpc-route traefik
    ```
+
+   Removing the relation withdraws the `:9090` entrypoint, which restarts Traefik a second time. In `traefik-k8s`, the `:9090` entrypoint and its ServicePort can remain open until the next `update-status` reconciliation, so allow a full reconciliation cycle before treating the port as closed.
 
 ### Securing the API
 

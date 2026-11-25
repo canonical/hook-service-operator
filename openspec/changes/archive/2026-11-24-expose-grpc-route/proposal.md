@@ -6,7 +6,7 @@ The Hook Service runs a gRPC server on TCP port `9090` to stream group mappings,
 
 ## What Changes
 
-- Open TCP port `9090` on each Hook Service unit so the Kubernetes Service exposes gRPC traffic alongside HTTP port `8080`.
+- Open TCP port `9090` on each Hook Service unit so the Kubernetes Service exposes gRPC traffic alongside HTTP port `8080` (port opening and the `GRPC_PORT` env default landed in `f6ba1cda3`; this change relies on that baseline).
 - Add an optional `grpc-route` relation (`traefik_route` interface, limit `1`) to publish TCP routing rules to an internal Traefik controller.
 - Configure Traefik with a `grpc` entrypoint on port `9090` and a wildcard `HostSNI(*)` TCP route that terminates TLS and forwards plaintext `h2c`.
 - Export `grpc-route` in the Terraform module `requires` output map.
@@ -28,9 +28,9 @@ The Hook Service runs a gRPC server on TCP port `9090` to stream group mappings,
 
 | Environment Variable | Source | Change |
 | --- | --- | --- |
-| *(None)* | Workload default (`GRPC_PORT=9090`) | No change. |
+| `GRPC_PORT` | `DEFAULT_CONTAINER_ENV` in `src/env_vars.py` (`"9090"`, landed in `f6ba1cda3`) | pre-existing |
 
-This change modifies no container environment variables because `hook-service` listens on `GRPC_PORT=9090` by default.
+This change modifies no container environment variables: `GRPC_PORT=9090` is already set in `DEFAULT_CONTAINER_ENV` (`src/env_vars.py`), landed in `f6ba1cda3` prior to this change.
 
 ## Success Metrics
 
@@ -42,3 +42,4 @@ This change modifies no container environment variables because `hook-service` l
 
 - `charmcraft.yaml` and `terraform/outputs.tf` add the optional `grpc-route` relation endpoint.
 - The charm runtime opens TCP port `9090` and submits static and dynamic TCP route configurations to Traefik.
+- Requires the `hook-service` workload image `>= v1.4.0`; earlier images do not listen on `:9090`. The image bump to `v1.4.0` is carried by the stacked upgrade PR (#255), not this change.

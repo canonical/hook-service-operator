@@ -1,14 +1,14 @@
 schema: spec-driven
 
 context: |
-  This is a Kubernetes-native Charmed Operator (hook-service-operator) written in Python 3.12+ using the Ops SDK.
+  This is a Kubernetes-native Charmed Operator (hook-service-operator) written in Python 3.10+ (charm base ubuntu@22.04) using the Ops SDK.
   It manages a Go application binary (hook-service) handling Hydra token hooks, group/authz management, and token enrichment within Canonical's Identity Platform.
 
   Tech stack: Python Ops SDK, Pebble sidecar container manager, Juju 3.x Secrets, Terraform (for bundle deployment).
-  Workload specifications: Exposes HTTP port 8080 for the hook service API and Hydra token hook integration. Orchestrates OpenFGA store/model provisioning and PostgreSQL persistence prior to workload startup.
+  Workload specifications: Exposes HTTP port 8080 for the hook service API and Hydra token hook integration, and plaintext HTTP/2 (h2c) gRPC traffic on port 9090 (hook-service workload image >= v1.4.0). Orchestrates OpenFGA store/model provisioning and PostgreSQL persistence prior to workload startup.
 
   Code conventions & Architectural constraints (mandatory):
-  - File headers: Copyright 2025 Canonical Ltd. / See LICENSE file for licensing details.
+  - File headers: `# Copyright <current year> Canonical Ltd.` / `# See LICENSE file for licensing details.`
   - Executable files: Executable Python entrypoints (e.g., `src/charm.py`) must include a proper Python 3 shebang (`#!/usr/bin/env python3`) at the beginning of the file.
   - Centralized Reconciliation: Must implement a centralized logic flow using `_holistic_handler` as the explicit entry point for the reconciliation handler across lifecycle events.
   - Container Execution: The workload binary must be orchestrated through Pebble layers.
@@ -16,13 +16,13 @@ context: |
   - Juju Secrets Protocol: Sensitive data exchange must use Juju 3.x native secrets. Cleartext credentials must never reside directly inside unencrypted relation databags.
 
   Files & Workspace Structure:
-  - charmcraft.yaml: Monolithic configuration manifest defining charm metadata, container primitives, system limits, relation interfaces (requires pg-database, oauth, openfga, receive-ca-cert, tenant-service-info, internal-route, logging, tracing; provides hydra-token-hook, metrics-endpoint, grafana-dashboard; peer hook-service), user-facing configs, and juju actions.
+  - charmcraft.yaml: Monolithic configuration manifest defining charm metadata, container primitives, system limits, relation interfaces (requires pg-database, oauth, openfga, receive-ca-cert, tenant-service-info, internal-route, grpc-route, logging, tracing; provides hydra-token-hook, metrics-endpoint, grafana-dashboard; peer hook-service), user-facing configs, and juju actions.
   - lib/: Charm libraries providing/consuming interfaces for integrating with other charms.
   - src/charm.py: Orchestrator component. Contains event subscriptions and the main `_holistic_handler` routing loop. Must be kept minimal.
   - src/services.py: Contains `WorkloadService` and `PebbleService` implementations managing container daemon state and workload versions.
   - src/configs.py: Contains `CharmConfig` objects validating charm-specific configuration fields and runtime environments.
   - src/integrations.py: Holds relation wrappers, data transformation mappers, and `EnvVarConvertible` interface implementations.
-  - src/secret.py: Dedicated library code for handling Juju native secrets management and decryption lifecycle events.
+  - src/secret.py: Manages the charm-owned Juju secret (API token): creation, tracked-content retrieval, and readiness checks.
   - src/cli.py: Wraps `hook-service` administrative CLI execution via Pebble exec utilities.
   - src/clients.py: Application-specific API clients (HTTP calls).
   - src/constants.py: Centralized static string constants, standard integration token names, and exposed infrastructure ports.
@@ -50,7 +50,7 @@ rules:
     - Explicitly state any breaking changes or backward compatibility requirements
   design:
     - All design decisions should be justified with trade-offs and alternatives considered
-    - Include database schema modifications (e.g., tables, indexes, migrations) explicitly when applicable
+    - Include database schema considerations explicitly when applicable (this charm owns no database schema; PostgreSQL is managed by the related `postgresql-k8s` charm)
     - Include diagrams (Mermaid) or visual aids when describing complex designs
     - Include security, performance, observability, scalability, migration considerations as applicable to the design
   tasks:
