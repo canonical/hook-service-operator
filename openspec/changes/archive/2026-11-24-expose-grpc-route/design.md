@@ -4,7 +4,7 @@
 
 See `proposal.md` (`Why`) for problem motivation.
 
-The `hook-service` binary starts an HTTP server on port `8080` and a plaintext HTTP/2 (`h2c`) gRPC server on port `9090`. Currently, `WorkloadService.open_port()` in `src/services.py` opens only TCP port `8080`, and `internal-route` configures HTTP routers only.
+The `hook-service` binary starts an HTTP server on port `8080` and a plaintext HTTP/2 (`h2c`) gRPC server on port `9090`. `WorkloadService.open_port()` in `src/services.py` already opens TCP ports `8080` and `9090` (landed in `f6ba1cda3` prior to this change), and `internal-route` configures HTTP routers only. The gRPC server only exists in workload images `>= v1.4.0`; the image bump is carried by the stacked upgrade PR (#255), not this change.
 
 `HookServiceOperatorCharm` reconciles all integrations through `_holistic_handler` in `src/charm.py` and includes `charms.traefik_k8s.v0.traefik_route`.
 
@@ -42,7 +42,7 @@ The charm adds a separate `grpc-route` endpoint (`interface: traefik_route`, `li
 
 ### 2. Use a dedicated `:9090` TCP entrypoint with `tls.passthrough: false`
 
-`GrpcRouteIntegration` submits static config `{"entryPoints": {"grpc": {"address": ":9090"}}}` and a TCP router on `["grpc"]` with `rule: "HostSNI(`*`)"` and `tls: {"passthrough": false}`.
+`GrpcRouteIntegration` submits static config `{"entryPoints": {"grpc": {"address": ":9090"}}}` and a TCP router on `["grpc"]` with `rule: "HostSNI('*')"`, `tls: {"passthrough": false}`, and no `proxyProtocol`.
 
 - **Rationale:** `traefik-k8s` reads `static.entryPoints` and opens `ServicePort(9090)` on its LoadBalancer Service. A dedicated entrypoint avoids Traefik v2.11 priority rules on `websecure` (`:443`), where `PathPrefix` HTTPS routers override `HostSNI(*)` TCP routers. Traefik's default TLS options advertise `ALPN: ["h2", "http/1.1"]`, which satisfies `grpc-go` (`>= 1.67`) ALPN checks before forwarding raw `h2c` bytes.
 - **Alternatives considered:** Routing gRPC through an HTTP router with `scheme: h2c` on `websecure`. We rejected this to match the proven `authentik-ldap-outpost-operator` L4 pattern requested for internal TCP ingress.

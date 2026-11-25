@@ -4,11 +4,11 @@
 
 - [x] 1.1 Add optional `grpc-route` relation in `charmcraft.yaml` and verify valid YAML structure.
 - [x] 1.2 Add `grpc-route` to the `requires` output map in `terraform/outputs.tf` and verify the key matches `charmcraft.yaml`.
-- [x] 1.3 Define `GRPC_PORT = 9090` and `GRPC_ROUTE_INTEGRATION_NAME` in `src/constants.py` and verify module import succeeds.
+- [x] 1.3 Add `GRPC_ROUTE_INTEGRATION_NAME` to `src/constants.py` and verify the pre-existing `GRPC_PORT = 9090` (landed in `f6ba1cda3`); verify module import succeeds.
 
 ## 2. Workload Port Exposure (`pebble-ready`)
 
-- [x] 2.1 Update `WorkloadService.open_port()` in `src/services.py` to open `GRPC_PORT` alongside `PORT` and verify both TCP port calls.
+- [x] 2.1 Verify `WorkloadService.open_port()` in `src/services.py` already opens `GRPC_PORT` alongside `PORT` (landed in `f6ba1cda3`); no change needed in this change.
 - [x] 2.2 Add `pebble-ready` unit tests in `tests/unit/test_charm.py` for TCP ports `8080` and `9090` and verify with `tox -e unit`.
 
 ## 3. Traefik TCP Route Template and Integration Wrapper
@@ -34,8 +34,7 @@
 
 ## Implementation Notes
 
-- Record any deviations from `design.md` or `tasks.md` here during implementation.
-- Bumped `resources.oci-image.upstream-source` in `charmcraft.yaml` from `ghcr.io/canonical/hook-service:v1.3.1` to `ghcr.io/canonical/hook-service:v1.4.0` because `v1.3.1` did not listen on gRPC port `9090`, and added `trust=True` to `hook-service` deploy in `tests/integration/test_charm.py`.
+- The `v1.4.0` workload image bump this change depends on (earlier images do not listen on gRPC port `9090`) moved to the stacked upgrade PR (#255) during review; this branch no longer bumps the image. `trust=True` was added to the `hook-service` deploy in `tests/integration/test_charm.py` because `KubernetesComputeResourcesPatch` requires cluster access.
 - Verified integration tests on local `k0s-ctrl` controller using `.tox/integration/bin/pytest tests/integration` with `CHARM_PATH` (11 passed, 3 skipped in `test_upgrade.py`), bypassing `tox -e build-prerequisites` (`sudo apt-get`) since prerequisites were already installed.
 
 ## Workflow follow-up
