@@ -373,7 +373,9 @@ class TenantServiceInfoData:
             "TENANT_SERVICE_GRPC_ADDRESS": (
                 parsed.netloc if parsed and parsed.netloc else self.grpc_url
             ),
-            "TENANT_SERVICE_TLS_ENABLED": bool(parsed and parsed.scheme in ("https", "grpcs")),
+            "TENANT_SERVICE_TLS_ENABLED": bool(
+                parsed and parsed.netloc and parsed.scheme == "https"
+            ),
         }
 
     @classmethod

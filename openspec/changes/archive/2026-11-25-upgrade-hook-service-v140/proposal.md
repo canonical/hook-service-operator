@@ -22,7 +22,7 @@ hook-service v1.4.0 brings the `GroupsMappingService` gRPC API that the upcoming
 | Environment Variable | Source | Change |
 | --- | --- | --- |
 | `TENANT_SERVICE_GRPC_ADDRESS` | `tenant-service-info` relation `grpc_url` (scheme stripped) | new |
-| `TENANT_SERVICE_TLS_ENABLED` | derived from `grpc_url` scheme (`https`/`grpcs` → true, else false) | new |
+| `TENANT_SERVICE_TLS_ENABLED` | derived from `grpc_url` scheme (`https` → true, else false) | new |
 | `TENANT_SERVICE_GRPC_TIMEOUT` | constant `"5s"` (workload default) | new |
 | `TENANT_SERVICE_URL` | removed upstream in v1.4.0 | dropped |
 
