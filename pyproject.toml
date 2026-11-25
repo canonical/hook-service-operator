@@ -48,6 +48,7 @@ unit = [
     "pytest-mock",
 ]
 integration = [
+    "httpx[http2]",
     "jubilant",
     "pytest",
     "requests",

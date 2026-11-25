@@ -3,19 +3,15 @@
 # See LICENSE file for licensing details.
 
 import logging
-import socket
-import ssl
 from pathlib import Path
 
 import jubilant
 import pytest
 import requests
-import yaml
 from integration.constants import (
     APP_NAME,
     DB_APP,
     DB_CHARM,
-    GRPC_PORT,
     GRPC_ROUTE_INTEGRATION_NAME,
     INGRESS_DOMAIN,
     METADATA,
@@ -25,7 +21,7 @@ from integration.constants import (
     TRAEFIK_CHARM,
 )
 from integration.utils import (
-    get_unit_data,
+    assert_grpc_route,
     remove_integration,
     unit_address,
     wait_for_active_idle,
@@ -114,31 +110,7 @@ def test_ingress_route(
 
 def test_grpc_route(model: jubilant.Juju) -> None:
     """Test gRPC TCP routing through Traefik on port 9090."""
-    traefik_unit_data = get_unit_data(model, f"{TRAEFIK_APP}/0")
-    grpc_relations = [
-        rel["application-data"]
-        for rel in traefik_unit_data["relation-info"]
-        if rel["endpoint"] == "traefik-route" and "static" in rel.get("application-data", {})
-    ]
-    assert len(grpc_relations) == 1
-    static_cfg = yaml.safe_load(grpc_relations[0]["static"])
-    assert static_cfg == {"entryPoints": {"grpc": {"address": f":{GRPC_PORT}"}}}
-
-    address = unit_address(model, app_name=TRAEFIK_APP, unit_num=0)
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
-    ssl_ctx.set_alpn_protocols(["h2"])
-
-    with socket.create_connection((address, GRPC_PORT), timeout=10) as raw_sock:
-        with ssl_ctx.wrap_socket(raw_sock, server_hostname=INGRESS_DOMAIN) as tls_sock:
-            assert tls_sock.selected_alpn_protocol() == "h2"
-            tls_sock.sendall(
-                b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\x00\x00\x04\x00\x00\x00\x00\x00"
-            )
-            header = tls_sock.recv(9)
-            assert len(header) == 9
-            assert header[3] == 0x04
+    assert_grpc_route(model)
 
 
 def test_groups_api(
@@ -175,6 +147,10 @@ def test_remove_integration(
         wait_for_status(model, apps=[APP_NAME], status=expected_status, timeout=1000)
 
     wait_for_active_idle(model, apps=[APP_NAME, remote_app_name], timeout=1000)
+    if integration_name == GRPC_ROUTE_INTEGRATION_NAME:
+        # grpc-route removal and re-addition restarts Traefik twice (static
+        # entrypoint withdrawn, then republished); retry until routing recovers.
+        assert_grpc_route(model, timeout=120)
 
 
 def test_scaling_down(model: jubilant.Juju) -> None:
