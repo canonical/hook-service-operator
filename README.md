@@ -107,6 +107,32 @@ This relation configures Traefik with a `grpc` entrypoint on `:9090` and a wildc
 
    Removing the relation withdraws the `:9090` entrypoint, which restarts Traefik a second time. In `traefik-k8s`, the `:9090` entrypoint and its ServicePort can remain open until the next `update-status` reconciliation, so allow a full reconciliation cycle before treating the port as closed.
 
+### Integrating gRPC Consumers (`groups-api`)
+
+Consumers such as JAAS integrate via the optional one-to-many `groups-api` relation (`groups_api` interface) using the `charms.hook_service.v0.groups_api` library.
+
+- **Authentication required**: When at least one `groups-api` relation is active, `hook-service` requires JWT authentication via the `oauth` relation or `authn_issuer`. Without auth configured, the unit enters `BlockedStatus` (or `WaitingStatus` while `oauth` client creation is pending) and withholds endpoint data.
+- **Dynamic subject allowlisting**: Each consumer publishes its OIDC `subject` ID; `hook-service` merges all active consumer subjects into `AUTHENTICATION_ALLOWED_SUBJECTS` and removes them when relations depart.
+- **Endpoint & TLS resolution**: `groups-api` ignores `use_ingress_for_relations` and resolves the gRPC target from `grpc-route`:
+  - Without `grpc-route`: `<app>.<model>.svc.cluster.local:9090` (`tls_enabled: false`)
+  - With `grpc-route` (`external_host` populated): `<external_host>:9090` (`tls_enabled: true`)
+
+#### Rollout and Rollback (`groups-api`)
+
+1. Ensure authentication is configured (`juju integrate hook-service:oauth hydra` or `juju config hook-service authn_issuer=...`).
+2. For cross-cluster consumers such as JAAS, ensure `hook-service:grpc-route` is integrated with an internal `traefik-k8s` controller.
+3. Integrate the consumer application:
+
+   ```console
+   juju integrate hook-service:groups-api jaas:groups-api
+   ```
+
+4. To roll back, remove the consumer relation (its OIDC subject is automatically pruned from `AUTHENTICATION_ALLOWED_SUBJECTS`):
+
+   ```console
+   juju remove-relation hook-service:groups-api jaas:groups-api
+   ```
+
 ### Securing the API
 
 The charm supports securing the API using an OAuth provider (like Hydra). When enabled, all API requests must be authenticated with a valid Bearer token.

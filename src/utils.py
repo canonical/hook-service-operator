@@ -7,10 +7,12 @@ import logging
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
-from ops import ActiveStatus, BlockedStatus, StatusBase
+from ops import ActiveStatus, BlockedStatus, StatusBase, WaitingStatus
 
 from constants import (
     DATABASE_INTEGRATION_NAME,
+    GROUPS_API_INTEGRATION_NAME,
+    OAUTH_INTEGRATION_NAME,
     OPENFGA_INTEGRATION_NAME,
     OPENFGA_MODEL_ID,
     PEER_INTEGRATION_NAME,
@@ -52,6 +54,7 @@ def integration_existence(integration_name: str) -> Condition:
 database_integration_exists = integration_existence(DATABASE_INTEGRATION_NAME)
 peer_integration_exists = integration_existence(PEER_INTEGRATION_NAME)
 openfga_integration_exists = integration_existence(OPENFGA_INTEGRATION_NAME)
+groups_api_integration_exists = integration_existence(GROUPS_API_INTEGRATION_NAME)
 
 
 def container_connectivity(charm: "HookServiceOperatorCharm") -> bool:
@@ -109,6 +112,12 @@ def authentication_config_status(charm: "HookServiceOperatorCharm") -> StatusBas
         logger.error("authn_issuer config key must be set when using authentication config.")
         return BlockedStatus("Invalid authentication configuration")
 
+    if groups_api_integration_exists(charm) and not (
+        oauth_relation_ready or oauth_config.get("authn_issuer")
+    ):
+        if charm.model.relations.get(OAUTH_INTEGRATION_NAME):
+            return WaitingStatus("Waiting for OAuth integration readiness")
+        return BlockedStatus("Missing authentication configuration for groups-api")
     return ActiveStatus()
 
 
@@ -120,6 +129,13 @@ def authentication_config_is_valid(charm: "HookServiceOperatorCharm") -> bool:
 def openfga_integration_exists_if_required(charm: "HookServiceOperatorCharm") -> bool:
     """Check the OpenFGA integration exists when authorization needs it."""
     return not charm._config.authorization_enabled or openfga_integration_exists(charm)
+
+
+def groups_api_waiting_for_grpc_route(charm: "HookServiceOperatorCharm") -> bool:
+    """Check whether active groups-api relations are waiting on grpc-route external_host."""
+    if not charm.groups_api.is_active():
+        return False
+    return charm.groups_api.resolve_grpc_endpoint() is None
 
 
 # Condition failure causes early return without doing anything

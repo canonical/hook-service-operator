@@ -27,5 +27,6 @@ output "provides" {
     hydra-token-hook  = "hydra-token-hook"
     metrics-endpoint  = "metrics-endpoint"
     grafana-dashboard = "grafana-dashboard"
+    groups-api        = "groups-api"
   }
 }

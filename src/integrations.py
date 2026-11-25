@@ -6,13 +6,14 @@
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 from urllib.parse import urlparse
 
 from charms.certificate_transfer_interface.v1.certificate_transfer import (
     CertificateTransferRequires,
 )
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from charms.hook_service.v0.groups_api import GroupsApiProvider
 from charms.hydra.v0.hydra_token_hook import (
     AuthIn,
     HydraHookProvider,
@@ -158,6 +159,66 @@ class GrpcRouteIntegration:
             config=self._load_config(),
             static=self.STATIC_CONFIG,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class GrpcEndpointData:
+    """Resolved gRPC endpoint target and TLS setting."""
+
+    grpc_address: str
+    tls_enabled: bool
+
+
+class GroupsApiIntegration:
+    """Manage the groups-api provider integration."""
+
+    def __init__(self, provider: GroupsApiProvider) -> None:
+        self._provider = provider
+
+    @property
+    def active_relations(self) -> list[Relation]:
+        """Active groups-api relations."""
+        return self._provider.active_relations
+
+    def is_active(self) -> bool:
+        """Check whether at least one active groups-api relation exists."""
+        return bool(self._provider.active_relations)
+
+    def get_allowed_subjects(self) -> list[str]:
+        """Collect sorted, deduplicated consumer OIDC subjects."""
+        return self._provider.get_allowed_subjects()
+
+    def resolve_grpc_endpoint(self) -> Optional[GrpcEndpointData]:
+        """Resolve gRPC target address and TLS mode from grpc-route presence."""
+        charm = self._provider._charm
+        grpc_route = charm.model.get_relation(GRPC_ROUTE_INTEGRATION_NAME)
+        if grpc_route and grpc_route.active and grpc_route.app:
+            external_host = grpc_route.data[grpc_route.app].get("external_host", "").strip()
+            if not external_host:
+                return None
+            return GrpcEndpointData(
+                grpc_address=f"{external_host}:{GRPC_PORT}",
+                tls_enabled=True,
+            )
+
+        return GrpcEndpointData(
+            grpc_address=f"{charm.app.name}.{charm.model.name}.svc.cluster.local:{GRPC_PORT}",
+            tls_enabled=False,
+        )
+
+    def update_relation_data(self) -> bool:
+        """Publish resolved gRPC endpoint data to active consumers from leader."""
+        if not self.is_active():
+            return True
+
+        if not (endpoint := self.resolve_grpc_endpoint()):
+            return False
+
+        self._provider.update_relations_app_data(
+            grpc_address=endpoint.grpc_address,
+            tls_enabled=endpoint.tls_enabled,
+        )
+        return True
 
 
 @dataclass(frozen=True)
@@ -357,16 +418,20 @@ class OAuthProviderData:
     token_endpoint: str = ""
     client_id: str = ""
     client_secret: str = ""
+    extra_subjects: tuple[str, ...] = ()
 
     def to_env_vars(self) -> EnvVars:
-        additional_subjects = [s.strip() for s in self.allowed_subjects.split(",") if s.strip()]
+        additional_subjects = {s.strip() for s in self.allowed_subjects.split(",") if s.strip()}
         if self.client_id:
-            additional_subjects.append(self.client_id)
+            additional_subjects.add(self.client_id.strip())
+        for subject in self.extra_subjects:
+            if stripped := subject.strip():
+                additional_subjects.add(stripped)
 
         return {
             "AUTHENTICATION_ENABLED": self.auth_enabled,
             "AUTHENTICATION_ISSUER": self.oidc_issuer_url,
-            "AUTHENTICATION_ALLOWED_SUBJECTS": ",".join(additional_subjects),
+            "AUTHENTICATION_ALLOWED_SUBJECTS": ",".join(sorted(additional_subjects)),
             "AUTHENTICATION_REQUIRED_SCOPE": self.allowed_scope,
             "AUTHENTICATION_JWKS_URL": self.jwks_url,
         }
@@ -386,8 +451,10 @@ class OAuthIntegration:
         allowed_scope: str = "",
         jwks_url: str = "",
         issuer: str = "",
+        extra_subjects: Iterable[str] = (),
     ) -> OAuthProviderData:
         """Get the OAuth provider data."""
+        merged_extra = tuple(extra_subjects)
         if self._requirer.is_client_created() and (info := self._requirer.get_provider_info()):
             return OAuthProviderData(
                 auth_enabled=True,
@@ -397,6 +464,7 @@ class OAuthIntegration:
                 token_endpoint=info.token_endpoint,
                 client_id=info.client_id,
                 client_secret=info.client_secret,
+                extra_subjects=merged_extra,
             )
 
         if issuer:
@@ -406,6 +474,7 @@ class OAuthIntegration:
                 jwks_url=jwks_url,
                 allowed_subjects=allowed_subjects,
                 allowed_scope=allowed_scope,
+                extra_subjects=merged_extra,
             )
 
         return OAuthProviderData()

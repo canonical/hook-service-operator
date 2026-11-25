@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
 import pytest
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
+from charms.hook_service.v0.groups_api import GroupsApiProvider
 from charms.openfga_k8s.v1.openfga import OpenfgaProviderAppData, OpenFGARequires
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
 from ops import CharmBase, Relation
@@ -13,8 +14,11 @@ from pydantic import AnyHttpUrl
 from constants import GRPC_PORT, GRPC_ROUTE_INTEGRATION_NAME, PORT
 from integrations import (
     DatabaseConfig,
+    GroupsApiIntegration,
+    GrpcEndpointData,
     GrpcRouteIntegration,
     InternalIngressData,
+    OAuthProviderData,
     OpenFGAIntegration,
     OpenFGAIntegrationData,
     OpenFGAModelData,
@@ -314,3 +318,91 @@ class TestOpenFGAIntegration:
         data = integration.openfga_integration_data
 
         assert data == OpenFGAIntegrationData()
+
+
+class TestGroupsApiIntegration:
+    @pytest.fixture
+    def mocked_charm(self) -> MagicMock:
+        charm = MagicMock(spec=CharmBase)
+        charm.model.name = "test-model"
+        charm.app.name = "hook-service"
+        charm.model.get_relation.return_value = None
+        return charm
+
+    @pytest.fixture
+    def mocked_provider(self, mocked_charm: MagicMock) -> MagicMock:
+        provider = create_autospec(GroupsApiProvider)
+        provider._charm = mocked_charm
+        provider.active_relations = [MagicMock(spec=Relation)]
+        return provider
+
+    def test_resolve_without_grpc_route(self, mocked_provider: MagicMock) -> None:
+        integration = GroupsApiIntegration(mocked_provider)
+
+        assert integration.resolve_grpc_endpoint() == GrpcEndpointData(
+            grpc_address=f"hook-service.test-model.svc.cluster.local:{GRPC_PORT}",
+            tls_enabled=False,
+        )
+        assert integration.update_relation_data() is True
+        mocked_provider.update_relations_app_data.assert_called_once_with(
+            grpc_address=f"hook-service.test-model.svc.cluster.local:{GRPC_PORT}",
+            tls_enabled=False,
+        )
+
+    def test_resolve_with_grpc_route_external_host(
+        self, mocked_charm: MagicMock, mocked_provider: MagicMock
+    ) -> None:
+        grpc_route_rel = MagicMock(spec=Relation)
+        grpc_route_rel.active = True
+        grpc_route_rel.app = "traefik"
+        grpc_route_rel.data = {"traefik": {"external_host": "grpc.example.com"}}
+        mocked_charm.model.get_relation.return_value = grpc_route_rel
+
+        integration = GroupsApiIntegration(mocked_provider)
+
+        assert integration.resolve_grpc_endpoint() == GrpcEndpointData(
+            grpc_address=f"grpc.example.com:{GRPC_PORT}",
+            tls_enabled=True,
+        )
+        assert integration.update_relation_data() is True
+        mocked_provider.update_relations_app_data.assert_called_once_with(
+            grpc_address=f"grpc.example.com:{GRPC_PORT}",
+            tls_enabled=True,
+        )
+
+    def test_resolve_with_grpc_route_missing_external_host_withholds_write(
+        self, mocked_charm: MagicMock, mocked_provider: MagicMock
+    ) -> None:
+        grpc_route_rel = MagicMock(spec=Relation)
+        grpc_route_rel.active = True
+        grpc_route_rel.app = "traefik"
+        grpc_route_rel.data = {"traefik": {}}
+        mocked_charm.model.get_relation.return_value = grpc_route_rel
+
+        integration = GroupsApiIntegration(mocked_provider)
+
+        assert integration.resolve_grpc_endpoint() is None
+        assert integration.update_relation_data() is False
+        mocked_provider.update_relations_app_data.assert_not_called()
+
+    def test_update_relation_data_inactive_returns_true(self, mocked_provider: MagicMock) -> None:
+        mocked_provider.active_relations = []
+        integration = GroupsApiIntegration(mocked_provider)
+
+        assert integration.update_relation_data() is True
+        mocked_provider.update_relations_app_data.assert_not_called()
+
+
+class TestOAuthProviderData:
+    def test_to_env_vars_merges_and_deduplicates_subjects(self) -> None:
+        data = OAuthProviderData(
+            auth_enabled=True,
+            oidc_issuer_url="https://hydra.example.com",
+            allowed_subjects="sub-b, sub-a",
+            client_id="client-1",
+            extra_subjects=("jaas-sub", "sub-a", " "),
+        )
+
+        env = data.to_env_vars()
+
+        assert env["AUTHENTICATION_ALLOWED_SUBJECTS"] == "client-1,jaas-sub,sub-a,sub-b"
