@@ -6,18 +6,14 @@ description: >
   diverge from active OpenSpec specifications in openspec/specs/, introduce
   undocumented behaviors, violate existing requirements, or leave specs
   outdated.
-license: AGPL-3.0-only
+license: Apache-2.0
 metadata:
   author: Canonical
   version: "1.0.0"
   summary: >
     Detects drift between differential code changes and active OpenSpec
     specifications.
-  tags:
-    - openspec
-    - drift
-    - specification
-    - verification
+  tags: "openspec, drift, specification, verification"
 ---
 
 # Detect OpenSpec Drift
@@ -37,19 +33,32 @@ specifications located in `openspec/specs/`.
 Follow these steps in sequence:
 
 1. **Extract Differential Code Diff**
-   - Run `git diff origin/main...HEAD` (or against a specified base ref).
-   - If in an uncommitted working tree or detached state, run `git diff HEAD`.
+   - Ensure full history and `origin/main` exist before diffing (in shallow CI
+     clones such as `fetch-depth: 1`, deepen/unshallow first with
+     `git fetch --unshallow` and `git fetch origin main:refs/remotes/origin/main`).
+   - Compute and verify the merge base before running `git diff`:
+     `base="$(git merge-base origin/main HEAD)" && git diff "$base"` (or compare
+     against a specified base ref) to cover committed, staged, and unstaged
+     changes in both attached and detached HEAD states.
+   - Run `git ls-files --others --exclude-standard` to include untracked files.
    - Exclude vendored directories, third-party libraries, virtual environments,
      and auto-generated lock/cache files.
 
 2. **Discover Active Specifications**
-   - Locate all specification files matching `openspec/specs/**/spec.md`.
-   - Extract the capability name, `Purpose`, `### Requirement:` sections,
-     and `#### Scenario:` blocks for each capability.
+   - Locate all specification files matching `openspec/specs/**/spec.md` as the
+     baseline, and overlay any in-flight delta specs in
+     `openspec/changes/*/specs/**/spec.md`.
+   - When overlaying delta specs, apply delta operation headers rather than
+     treating headings flatly: merge `## ADDED Requirements`, replace matching
+     baseline entries for `## MODIFIED Requirements`, drop entries under
+     `## REMOVED Requirements`, and rename `- FROM:` / `- TO:` entries under
+     `## RENAMED Requirements`.
+   - Extract the capability name, `Purpose`, `### Requirement:` sections, and
+     `#### Scenario:` blocks for each effective capability.
 
 3. **Perform Semantic Drift Evaluation**
    - Compare changed files, symbols, endpoints, and behaviors against the
-     specification requirements:
+     effective specification requirements from Step 2:
      - **Contradictions (CRITICAL)**: Code changes violate an explicit `SHALL`
        requirement or scenario expectation in an existing spec.
      - **Undocumented Behaviors (WARNING)**: Code introduces new public APIs,
@@ -112,6 +121,8 @@ Use the following format for the evaluation report:
 ## MODIFIED Requirements
 
 ### Requirement: Requirement title
+The system SHALL satisfy the updated contract.
+
 #### Scenario: Scenario title
 - **WHEN** condition occurs
 - **THEN** expected outcome

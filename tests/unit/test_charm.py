@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 import dataclasses
+import json
 from typing import Any, ClassVar, Protocol, TypeVar
 from unittest.mock import MagicMock, patch
 
@@ -337,6 +338,134 @@ class TestHolisticHandler:
         env = layer.services.get("hook-service").environment  # type: ignore
         assert env["TENANT_SERVICE_GRPC_ADDRESS"] == "tenant-service:50051"
         assert env["TENANT_SERVICE_TLS_ENABLED"] is True
+
+    def test_tenant_service_grpc_env_from_schemeless_url(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        tenant_service_info_relation = testing.Relation(
+            endpoint="tenant-service-info",
+            interface="tenant_service_info",
+            remote_app_name="tenant-service",
+            remote_app_data={
+                "grpc_url": "tenant-service.my-model.svc.cluster.local:50051",
+            },
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[tenant_service_info_relation] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        layer = state_out.get_container("hook-service").layers["hook-service"]
+        env = layer.services.get("hook-service").environment  # type: ignore
+        assert (
+            env["TENANT_SERVICE_GRPC_ADDRESS"] == "tenant-service.my-model.svc.cluster.local:50051"
+        )
+        assert env["TENANT_SERVICE_TLS_ENABLED"] is False
+        assert env["TENANT_SERVICE_GRPC_TIMEOUT"] == "5s"
+
+    @pytest.mark.parametrize(
+        "grpc_url",
+        [
+            pytest.param("https:50051", id="schemeless-host-named-https"),
+            pytest.param("https://", id="scheme-only"),
+        ],
+    )
+    def test_tenant_service_grpc_tls_requires_netloc(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        grpc_url: str,
+    ) -> None:
+        tenant_service_info_relation = testing.Relation(
+            endpoint="tenant-service-info",
+            interface="tenant_service_info",
+            remote_app_name="tenant-service",
+            remote_app_data={"grpc_url": grpc_url},
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[tenant_service_info_relation] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        layer = state_out.get_container("hook-service").layers["hook-service"]
+        env = layer.services.get("hook-service").environment  # type: ignore
+        assert env["TENANT_SERVICE_GRPC_ADDRESS"] == grpc_url
+        assert env["TENANT_SERVICE_TLS_ENABLED"] is False
+
+    def test_hydra_token_hook_claims_with_tenant_grpc_url(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+    ) -> None:
+        hydra_relation = testing.Relation(
+            endpoint="hydra-token-hook",
+            interface="hydra_token_hook",
+            remote_app_name="hydra",
+        )
+        tenant_service_info_relation = testing.Relation(
+            endpoint="tenant-service-info",
+            interface="tenant_service_info",
+            remote_app_name="tenant-service",
+            remote_app_data={
+                "grpc_url": "tenant-service.my-model.svc.cluster.local:50051",
+            },
+        )
+        state_in = replace_state(
+            base_state,
+            relations=[hydra_relation, tenant_service_info_relation] + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        hydra_rel_out = state_out.get_relation(hydra_relation.id)
+        assert json.loads(hydra_rel_out.local_app_data["enabled_claims"]) == [
+            "groups",
+            "tenant_id",
+        ]
+
+    @pytest.mark.parametrize(
+        "remote_app_data",
+        [
+            pytest.param(None, id="relation-absent"),
+            pytest.param({"service_url": "http://tenant-service:8000"}, id="grpc-url-missing"),
+        ],
+    )
+    def test_hydra_token_hook_claims_without_tenant_grpc_url(
+        self,
+        context: testing.Context,
+        base_state: testing.State,
+        remote_app_data: dict[str, str] | None,
+    ) -> None:
+        hydra_relation = testing.Relation(
+            endpoint="hydra-token-hook",
+            interface="hydra_token_hook",
+            remote_app_name="hydra",
+        )
+        extra_relations = [hydra_relation]
+        if remote_app_data is not None:
+            extra_relations.append(
+                testing.Relation(
+                    endpoint="tenant-service-info",
+                    interface="tenant_service_info",
+                    remote_app_name="tenant-service",
+                    remote_app_data=remote_app_data,
+                )
+            )
+        state_in = replace_state(
+            base_state,
+            relations=extra_relations + list(base_state.relations),
+        )
+
+        state_out = context.run(context.on.config_changed(), state_in)
+
+        hydra_rel_out = state_out.get_relation(hydra_relation.id)
+        assert json.loads(hydra_rel_out.local_app_data["enabled_claims"]) == ["groups"]
 
     def test_migration_needed_not_leader(
         self,

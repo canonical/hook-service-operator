@@ -18,9 +18,10 @@
 
 ## 5. Unit tests
 
-- [x] 5.1 Update `TestHolisticHandler::test_when_all_conditions_satisfied` env dict for the new keys.
-- [x] 5.2 Rename `test_tenant_service_url_from_relation` → `test_tenant_service_grpc_env_from_relation`; assert gRPC address/TLS/timeout from `grpc_url`.
-- [x] 5.3 Add `test_tenant_service_grpc_tls_from_https_scheme` (https scheme → TLS true).
+- [x] 5.1 Update `TestHolisticHandler::test_when_all_conditions_satisfied` env dict in `tests/unit/test_charm.py` for the new keys.
+- [x] 5.2 Rename `test_tenant_service_url_from_relation` → `test_tenant_service_grpc_env_from_relation` in `tests/unit/test_charm.py`; assert gRPC address/TLS/timeout from `grpc_url`.
+- [x] 5.3 Add `test_tenant_service_grpc_tls_from_https_scheme`, `test_tenant_service_grpc_env_from_schemeless_url`, and `test_tenant_service_grpc_tls_requires_netloc` in `tests/unit/test_charm.py`.
+- [x] 5.4 Add `test_hydra_token_hook_claims_with_tenant_grpc_url` and `test_hydra_token_hook_claims_without_tenant_grpc_url` in `tests/unit/test_charm.py` covering `tenant_service_ready` gating.
 
 ## 6. Verification
 
@@ -34,5 +35,5 @@
 
 ## Implementation Notes
 
-- Deviation: the CLI rejected dots in change names, so the change is `upgrade-hook-service-v140` instead of `upgrade-hook-service-v1.4.0` (per plan contingency).
-- Local integration run required `juju trust hook-service --scope=cluster` granted externally right after deploy: `KubernetesComputeResourcesPatch` needs cluster access and this branch's integration suite deploys `hook-service` without `--trust` (PR #253's test commit adds it). With trust granted, all 9 tests passed (3 skipped in `test_upgrade.py`); the "12 passed" expectation included 2 grpc-route tests that only exist on `feat/expose-grpc-route`.
+- Deviation: the CLI rejected dots in change names, so the change is `upgrade-hook-service-v140` instead of `upgrade-hook-service-v1.4.0`.
+- Local integration run required `juju trust hook-service --scope=cluster` granted externally right after deploy: `KubernetesComputeResourcesPatch` needs cluster access and this branch's integration suite deploys `hook-service` without `--trust` (PR #253's test commit adds it). With trust granted, all 12 tests in the suite ran (`9 passed, 3 skipped`, with all 3 skips in `test_upgrade.py`, so the charm upgrade path was not exercised locally; 2 additional `grpc-route` integration tests live on `feat/expose-grpc-route`).

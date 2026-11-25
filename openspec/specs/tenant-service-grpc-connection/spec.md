@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Publish the tenant-service gRPC connection settings to the hook-service workload environment and advertise tenant readiness on the hydra token hook, matching the v1.4.0 workload configuration surface.
+Publish the tenant-service gRPC connection settings to the hook-service workload environment and advertise tenant readiness on the hydra token hook.
 
 ## Requirements
 
 ### Requirement: Publish tenant-service gRPC connection settings
 
-WHEN `tenant-service-info` is related and publishes `grpc_url`, THEN the workload env SHALL contain `TENANT_SERVICE_GRPC_ADDRESS` as bare `host:port` (URL scheme stripped) and `TENANT_SERVICE_TLS_ENABLED` (`true` for `https`/`grpcs` schemes, `false` otherwise), and `TENANT_SERVICE_GRPC_TIMEOUT` SHALL be `5s`.
+`TENANT_SERVICE_GRPC_TIMEOUT` SHALL be `5s`. WHEN `tenant-service-info` is related and publishes `grpc_url`, the workload env SHALL contain `TENANT_SERVICE_GRPC_ADDRESS` as bare `host:port` (URL scheme stripped) and `TENANT_SERVICE_TLS_ENABLED` (`true` for `https`/`grpcs` schemes, `false` otherwise).
 
 #### Scenario: http grpc_url
 
@@ -28,16 +28,7 @@ WHEN `tenant-service-info` is related and publishes `grpc_url`, THEN the workloa
 #### Scenario: relation absent
 
 - **WHEN** `tenant-service-info` is not related
-- **THEN** `TENANT_SERVICE_GRPC_ADDRESS` is empty and `TENANT_SERVICE_TLS_ENABLED` is `false` (tenant validation disabled, matching pre-upgrade behavior)
-
-### Requirement: Track the v1.4.0 workload image
-
-The `charmcraft.yaml` `resources.oci-image.upstream-source` SHALL be `ghcr.io/canonical/hook-service:v1.4.0`.
-
-#### Scenario: image tag
-
-- **WHEN** the charm is packed
-- **THEN** the `oci-image` resource points at `ghcr.io/canonical/hook-service:v1.4.0`
+- **THEN** `TENANT_SERVICE_GRPC_ADDRESS` is empty, `TENANT_SERVICE_TLS_ENABLED` is `false` (tenant validation disabled, matching pre-upgrade behavior), and `TENANT_SERVICE_GRPC_TIMEOUT` is `5s`
 
 ### Requirement: Advertise tenant readiness on the hydra token hook
 
@@ -52,3 +43,7 @@ The `tenant_id` claim SHALL be advertised on the hydra token hook only WHEN the 
 
 - **WHEN** `tenant-service-info` is absent or publishes no `grpc_url`
 - **THEN** the hydra token hook does not advertise `tenant_id`
+
+## Breaking Changes
+
+- `TENANT_SERVICE_URL` is no longer emitted in the workload environment (removed upstream in `hook-service` v1.4.0), and the `service_url` key in the `tenant-service-info` relation databag is no longer read. Deployments relying on tenant validation must use a provider publishing `grpc_url` (or remain with tenant validation disabled).
