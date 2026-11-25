@@ -6,18 +6,14 @@ description: >
   diverge from active OpenSpec specifications in openspec/specs/, introduce
   undocumented behaviors, violate existing requirements, or leave specs
   outdated.
-license: AGPL-3.0-only
+license: Apache-2.0
 metadata:
   author: Canonical
   version: "1.0.0"
   summary: >
     Detects drift between differential code changes and active OpenSpec
     specifications.
-  tags:
-    - openspec
-    - drift
-    - specification
-    - verification
+  tags: "openspec, drift, specification, verification"
 ---
 
 # Detect OpenSpec Drift
@@ -37,13 +33,16 @@ specifications located in `openspec/specs/`.
 Follow these steps in sequence:
 
 1. **Extract Differential Code Diff**
-   - Run `git diff origin/main...HEAD` (or against a specified base ref).
-   - If in an uncommitted working tree or detached state, run `git diff HEAD`.
+   - Run `git diff "$(git merge-base origin/main HEAD)"` (fetching `origin/main` first
+     in shallow clones) to cover committed, staged, and unstaged changes in both
+     attached and detached HEAD states (or compare against a specified base ref).
+   - Run `git ls-files --others --exclude-standard` to include untracked files.
    - Exclude vendored directories, third-party libraries, virtual environments,
      and auto-generated lock/cache files.
 
 2. **Discover Active Specifications**
-   - Locate all specification files matching `openspec/specs/**/spec.md`.
+   - Locate all specification files matching `openspec/specs/**/spec.md` (and any
+     in-flight delta specs in `openspec/changes/*/specs/**/spec.md`).
    - Extract the capability name, `Purpose`, `### Requirement:` sections,
      and `#### Scenario:` blocks for each capability.
 
@@ -112,10 +111,11 @@ Use the following format for the evaluation report:
 ## MODIFIED Requirements
 
 ### Requirement: Requirement title
+The system SHALL satisfy the updated contract.
+
 #### Scenario: Scenario title
 - **WHEN** condition occurs
 - **THEN** expected outcome
-```
 ````
 
 ## Definition of Done

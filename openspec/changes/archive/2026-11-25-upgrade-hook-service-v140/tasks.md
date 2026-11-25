@@ -34,5 +34,5 @@
 
 ## Implementation Notes
 
-- Deviation: the CLI rejected dots in change names, so the change is `upgrade-hook-service-v140` instead of `upgrade-hook-service-v1.4.0` (per plan contingency).
-- Local integration run required `juju trust hook-service --scope=cluster` granted externally right after deploy: `KubernetesComputeResourcesPatch` needs cluster access and this branch's integration suite deploys `hook-service` without `--trust` (PR #253's test commit adds it). With trust granted, all 9 tests passed (3 skipped in `test_upgrade.py`); the "12 passed" expectation included 2 grpc-route tests that only exist on `feat/expose-grpc-route`.
+- Deviation: the CLI rejected dots in change names, so the change is `upgrade-hook-service-v140` instead of `upgrade-hook-service-v1.4.0`.
+- Local integration run required `juju trust hook-service --scope=cluster` granted externally right after deploy: `KubernetesComputeResourcesPatch` needs cluster access and this branch's integration suite deploys `hook-service` without `--trust` (PR #253's test commit adds it). With trust granted, all 12 tests in the suite ran (`9 passed, 3 skipped`, with all 3 skips in `test_upgrade.py`, so the charm upgrade path was not exercised locally; 2 additional `grpc-route` integration tests live on `feat/expose-grpc-route`).
