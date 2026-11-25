@@ -333,7 +333,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self.hydra_token_hook_integration.update_relation_data(
                 self._hydra_hook_url,
                 self._secrets.api_token,
-                tenant_service_ready=bool(TenantServiceInfoData.load(self.model).service_url),
+                tenant_service_ready=bool(TenantServiceInfoData.load(self.model).grpc_url),
             )
         return True
 
