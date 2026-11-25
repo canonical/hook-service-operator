@@ -7,9 +7,8 @@ import pytest
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.openfga_k8s.v1.openfga import OpenfgaProviderAppData, OpenFGARequires
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
-from ops import CharmBase
+from ops import CharmBase, Relation
 from pydantic import AnyHttpUrl
-from scenario import Relation
 
 from constants import GRPC_PORT, GRPC_ROUTE_INTEGRATION_NAME, PORT
 from integrations import (
