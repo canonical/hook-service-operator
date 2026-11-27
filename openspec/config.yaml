@@ -1,0 +1,64 @@
+schema: spec-driven
+
+context: |
+  This is a Kubernetes-native Charmed Operator (hook-service-operator) written in Python 3.10+ (charm base ubuntu@22.04) using the Ops SDK.
+  It manages a Go application binary (hook-service) handling Hydra token hooks, group/authz management, and token enrichment within Canonical's Identity Platform.
+
+  Tech stack: Python Ops SDK, Pebble sidecar container manager, Juju 3.x Secrets, Terraform (for bundle deployment).
+  Workload specifications: Exposes HTTP port 8080 for the hook service API and Hydra token hook integration, and plaintext HTTP/2 (h2c) gRPC traffic on port 9090 (hook-service workload image >= v1.4.0). Orchestrates OpenFGA store/model provisioning and PostgreSQL persistence prior to workload startup.
+
+  Code conventions & Architectural constraints (mandatory):
+  - File headers: `# Copyright <current year> Canonical Ltd.` / `# See LICENSE file for licensing details.`
+  - Executable files: Executable Python entrypoints (e.g., `src/charm.py`) must include a proper Python 3 shebang (`#!/usr/bin/env python3`) at the beginning of the file.
+  - Centralized Reconciliation: Must implement a centralized logic flow using `_holistic_handler` as the explicit entry point for the reconciliation handler across lifecycle events.
+  - Container Execution: The workload binary must be orchestrated through Pebble layers.
+  - Limit `event.defer()`: Prefer holistic idempotent reconciliation. Deferral is a last resort.
+  - Juju Secrets Protocol: Sensitive data exchange must use Juju 3.x native secrets. Cleartext credentials must never reside directly inside unencrypted relation databags.
+
+  Files & Workspace Structure:
+  - charmcraft.yaml: Monolithic configuration manifest defining charm metadata, container primitives, system limits, relation interfaces (requires pg-database, oauth, openfga, receive-ca-cert, tenant-service-info, internal-route, logging, tracing; provides hydra-token-hook, metrics-endpoint, grafana-dashboard; peer hook-service), user-facing configs, and juju actions.
+  - lib/: Charm libraries providing/consuming interfaces for integrating with other charms.
+  - src/charm.py: Orchestrator component. Contains event subscriptions and the main `_holistic_handler` routing loop. Must be kept minimal.
+  - src/services.py: Contains `WorkloadService` and `PebbleService` implementations managing container daemon state and workload versions.
+  - src/configs.py: Contains `CharmConfig` objects validating charm-specific configuration fields and runtime environments.
+  - src/integrations.py: Holds relation wrappers, data transformation mappers, and `EnvVarConvertible` interface implementations.
+  - src/secret.py: Manages the charm-owned Juju secret (API token): creation, tracked-content retrieval, and readiness checks.
+  - src/cli.py: Wraps `hook-service` administrative CLI execution via Pebble exec utilities.
+  - src/clients.py: Application-specific API clients (HTTP calls).
+  - src/constants.py: Centralized static string constants, standard integration token names, and exposed infrastructure ports.
+  - src/env_vars.py: Defines `DEFAULT_CONTAINER_ENV` maps and houses the structural `EnvVarConvertible` typing protocol.
+  - src/exceptions.py: Defines custom, domain-specific exception hierarchies for clear failure isolation.
+  - src/utils.py: Houses shared decorators (`leader_unit`, `container_connectivity`) and reconciliation `NOOP_CONDITIONS` / `EVENT_DEFER_CONDITIONS` predicates.
+  - tests/unit/: State-based charm unit tests using the `ops.testing` (Scenario) framework with shared pytest fixtures in `conftest.py`.
+  - tests/integration/: End-to-end cloud-native jubilant integration testing suite.
+
+  Product language:
+  - Write OpenSpec proposals and specs in user-facing product behavior language
+  - Requirements should describe the experience, observable behavior, and product contract
+  - Put internal mechanisms in design.md or tasks.md unless the mechanism is itself part of the user-facing contract
+  - Avoid technical jargon in proposals and specs when possible
+
+rules:
+  proposal:
+    - Keep proposals concise and strictly under 400 words.
+    - Include a "Non-goals" section to clarify what is out of scope for the proposal
+    - Include a "Success Metrics" section defining how we will measure the impact of this feature
+    - Map every proposed environmental update directly to the workload data provenance table.
+  specs:
+    - Write specs in ASD-STE100 (Simplified Technical English, >=80% compliance: short active-voice sentences, one requirement per sentence, consistent terminology, no idioms)
+    - Include a "Purpose" section when creating a new capability spec in `openspec/specs/` to explain the rationale behind the spec (delta updates to existing capabilities omit modifying `## Purpose`)
+    - Cover happy path, validation errors, and edge cases in the spec
+    - Explicitly state any breaking changes or backward compatibility requirements
+  design:
+    - All design decisions should be justified with trade-offs and alternatives considered
+    - Include database schema considerations explicitly when applicable (this charm owns no database schema; PostgreSQL is managed by the related `postgresql-k8s` charm)
+    - Include diagrams (Mermaid) or visual aids when describing complex designs
+    - Include security, performance, observability, scalability, migration considerations as applicable to the design
+  tasks:
+    - Break tasks down into distinct, single-event or relation-driven units of work.
+    - Every task must be independently completable (no implicit ordering within a group)
+    - Each task must explicitly reference the manifest or code file(s) it mutates (e.g., `src/charm.py`, `charmcraft.yaml`).
+    - Explicitly list unit, integration, or e2e testing requirements for each task (every relation implementation task must contain a parallel task mapping its corresponding unit/integration test suite requirements).
+    - Include a verification suite section
+    - Include a documentation & rollout section covering any necessary documentation updates and rollout steps
+    - Record deviations from the plan in an "Implementation Notes" section at the end
