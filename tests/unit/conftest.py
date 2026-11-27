@@ -98,6 +98,15 @@ def internal_route_integration(internal_route_integration_data: dict) -> testing
     )
 
 
+@pytest.fixture
+def grpc_route_integration() -> testing.Relation:
+    return testing.Relation(
+        endpoint="grpc-route",
+        interface="traefik_route",
+        remote_app_name="traefik-grpc",
+    )
+
+
 @pytest.fixture()
 def api_token() -> str:
     return "secret"

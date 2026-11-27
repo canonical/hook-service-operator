@@ -16,6 +16,7 @@ output "requires" {
     receive-ca-cert     = "receive-ca-cert"
     pg-database         = "pg-database"
     internal-route      = "internal-route"
+    grpc-route          = "grpc-route"
     tenant-service-info = "tenant-service-info"
   }
 }

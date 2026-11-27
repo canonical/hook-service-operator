@@ -7,12 +7,13 @@ import pytest
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from charms.openfga_k8s.v1.openfga import OpenfgaProviderAppData, OpenFGARequires
 from charms.traefik_k8s.v0.traefik_route import TraefikRouteRequirer
+from ops import CharmBase, Relation
 from pydantic import AnyHttpUrl
-from scenario import Relation
 
-from constants import PORT
+from constants import GRPC_PORT, GRPC_ROUTE_INTEGRATION_NAME, PORT
 from integrations import (
     DatabaseConfig,
+    GrpcRouteIntegration,
     InternalIngressData,
     OpenFGAIntegration,
     OpenFGAIntegrationData,
@@ -77,6 +78,113 @@ class TestInternalIngressData:
             url=None,
             config={},
         )
+
+
+class TestGrpcRouteIntegration:
+    @pytest.fixture
+    def mocked_relation(self) -> MagicMock:
+        mocked = MagicMock(spec=Relation)
+        mocked.active = True
+        mocked.app = "traefik"
+        return mocked
+
+    @pytest.fixture
+    def mocked_charm(self) -> MagicMock:
+        charm = MagicMock(spec=CharmBase)
+        charm.model.name = "model"
+        charm.app.name = "app"
+        charm.unit.is_leader.return_value = True
+        return charm
+
+    @pytest.fixture
+    def mocked_requirer(self, mocked_relation: MagicMock) -> MagicMock:
+        requirer = create_autospec(TraefikRouteRequirer)
+        requirer.is_ready.return_value = True
+        requirer._relation = mocked_relation
+        return requirer
+
+    def test_default_requirer_uses_raw_false(self, mocked_charm: MagicMock) -> None:
+        relation = MagicMock(spec=Relation)
+        mocked_charm.model.get_relation.return_value = relation
+
+        with patch("integrations.TraefikRouteRequirer") as requirer_cls:
+            integration = GrpcRouteIntegration(mocked_charm)
+
+        requirer_cls.assert_called_once_with(
+            mocked_charm,
+            relation,
+            GRPC_ROUTE_INTEGRATION_NAME,
+            raw=False,
+        )
+        assert integration.requirer is requirer_cls.return_value
+
+    def test_submit_to_traefik_leader(
+        self, mocked_charm: MagicMock, mocked_requirer: MagicMock
+    ) -> None:
+        integration = GrpcRouteIntegration(mocked_charm, requirer=mocked_requirer)
+
+        integration.submit_to_traefik()
+
+        expected_config = {
+            "tcp": {
+                "routers": {
+                    "juju-model-app-grpc-router": {
+                        "entryPoints": ["grpc"],
+                        "rule": "HostSNI(`*`)",
+                        "service": "juju-model-app-grpc-service",
+                        "tls": {"passthrough": False},
+                    }
+                },
+                "services": {
+                    "juju-model-app-grpc-service": {
+                        "loadBalancer": {
+                            "servers": [{"address": f"app.model.svc.cluster.local:{GRPC_PORT}"}]
+                        }
+                    }
+                },
+            }
+        }
+        expected_static = {"entryPoints": {"grpc": {"address": f":{GRPC_PORT}"}}}
+        mocked_requirer.submit_to_traefik.assert_called_once_with(
+            config=expected_config,
+            static=expected_static,
+        )
+
+    def test_submit_to_traefik_non_leader_skips(
+        self, mocked_charm: MagicMock, mocked_requirer: MagicMock
+    ) -> None:
+        mocked_charm.unit.is_leader.return_value = False
+        integration = GrpcRouteIntegration(mocked_charm, requirer=mocked_requirer)
+
+        integration.submit_to_traefik()
+
+        mocked_requirer.submit_to_traefik.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "is_ready, active, app",
+        [
+            (False, True, "traefik"),
+            (True, False, "traefik"),
+            (True, True, None),
+        ],
+    )
+    def test_submit_to_traefik_not_ready_skips(
+        self,
+        mocked_charm: MagicMock,
+        mocked_requirer: MagicMock,
+        mocked_relation: MagicMock,
+        is_ready: bool,
+        active: bool,
+        app: str | None,
+    ) -> None:
+        mocked_requirer.is_ready.return_value = is_ready
+        mocked_relation.active = active
+        mocked_relation.app = app
+        integration = GrpcRouteIntegration(mocked_charm, requirer=mocked_requirer)
+
+        integration.submit_to_traefik()
+
+        mocked_requirer.submit_to_traefik.assert_not_called()
 
 
 class TestDatabaseConfig:

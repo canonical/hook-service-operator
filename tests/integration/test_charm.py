@@ -12,6 +12,7 @@ from integration.constants import (
     APP_NAME,
     DB_APP,
     DB_CHARM,
+    GRPC_ROUTE_INTEGRATION_NAME,
     INGRESS_DOMAIN,
     METADATA,
     OPENFGA_APP,
@@ -20,6 +21,7 @@ from integration.constants import (
     TRAEFIK_CHARM,
 )
 from integration.utils import (
+    assert_grpc_route,
     remove_integration,
     unit_address,
     wait_for_active_idle,
@@ -46,6 +48,7 @@ def test_build_and_deploy(
         resources=resources,
         app=APP_NAME,
         config=charm_config,
+        trust=True,
     )
 
     model.deploy(
@@ -71,6 +74,7 @@ def test_build_and_deploy(
     )
 
     model.integrate(TRAEFIK_APP, f"{APP_NAME}:internal-route")
+    model.integrate(TRAEFIK_APP, f"{APP_NAME}:{GRPC_ROUTE_INTEGRATION_NAME}")
     model.integrate(DB_APP, APP_NAME)
     model.integrate(f"{DB_APP}:database", f"{OPENFGA_APP}:database")
     model.integrate(OPENFGA_APP, f"{APP_NAME}:openfga")
@@ -104,6 +108,11 @@ def test_ingress_route(
     resp.raise_for_status()
 
 
+def test_grpc_route(model: jubilant.Juju) -> None:
+    """Test gRPC TCP routing through Traefik on port 9090."""
+    assert_grpc_route(model)
+
+
 def test_groups_api(
     model: jubilant.Juju,
     http_client: requests.Session,
@@ -126,6 +135,7 @@ def test_scaling_up(model: jubilant.Juju) -> None:
     "remote_app_name,integration_name,expected_status",
     [
         (TRAEFIK_APP, "internal-route", "active"),
+        (TRAEFIK_APP, GRPC_ROUTE_INTEGRATION_NAME, "active"),
         (DB_APP, "pg-database", "blocked"),
     ],
 )
@@ -137,6 +147,10 @@ def test_remove_integration(
         wait_for_status(model, apps=[APP_NAME], status=expected_status, timeout=1000)
 
     wait_for_active_idle(model, apps=[APP_NAME, remote_app_name], timeout=1000)
+    if integration_name == GRPC_ROUTE_INTEGRATION_NAME:
+        # grpc-route removal and re-addition restarts Traefik twice (static
+        # entrypoint withdrawn, then republished); retry until routing recovers.
+        assert_grpc_route(model, timeout=120)
 
 
 def test_scaling_down(model: jubilant.Juju) -> None:

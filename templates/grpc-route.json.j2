@@ -1,0 +1,28 @@
+{% set identifier = "{}-{}".format(model, app) %}
+{% set addr = "{}.{}.svc.cluster.local:{}".format(app, model, port) %}
+
+{
+  "tcp": {
+    "routers": {
+      "juju-{{ identifier }}-grpc-router": {
+        "entryPoints": ["grpc"],
+        "rule": "HostSNI(`*`)",
+        "service": "juju-{{ identifier }}-grpc-service",
+        "tls": {
+          "passthrough": false
+        }
+      }
+    },
+    "services": {
+      "juju-{{ identifier }}-grpc-service": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "address": "{{ addr }}"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

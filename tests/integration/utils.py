@@ -1,13 +1,15 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import time
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
+import httpx
 import jubilant
 import pytest
 import yaml
-from integration.constants import APP_NAME
+from integration.constants import APP_NAME, GRPC_PORT, TRAEFIK_APP
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 
@@ -119,6 +121,60 @@ def wait_for_status(
         return all(s.apps[app_name].app_status.current == status for app_name in apps)
 
     model.wait(condition, timeout=timeout)
+
+
+def _assert_grpc_route_once(model: jubilant.Juju) -> None:
+    """Assert the grpc-route databag and end-to-end gRPC routing once."""
+    traefik_unit_data = get_unit_data(model, f"{TRAEFIK_APP}/0")
+    grpc_relations = [
+        rel["application-data"]
+        for rel in traefik_unit_data["relation-info"]
+        if rel["endpoint"] == "traefik-route" and "static" in rel.get("application-data", {})
+    ]
+    assert len(grpc_relations) == 1
+    static_cfg = yaml.safe_load(grpc_relations[0]["static"])
+    assert static_cfg == {"entryPoints": {"grpc": {"address": f":{GRPC_PORT}"}}}
+    assert "config" in grpc_relations[0]
+
+    config_cfg = yaml.safe_load(grpc_relations[0]["config"])
+    identifier = f"{model.model}-{APP_NAME}"
+    router = config_cfg["tcp"]["routers"][f"juju-{identifier}-grpc-router"]
+    assert router["entryPoints"] == ["grpc"]
+    assert router["tls"] == {"passthrough": False}
+    service = config_cfg["tcp"]["services"][f"juju-{identifier}-grpc-service"]
+    assert service["loadBalancer"]["servers"] == [
+        {"address": f"{APP_NAME}.{model.model}.svc.cluster.local:{GRPC_PORT}"}
+    ]
+
+    address = unit_address(model, app_name=TRAEFIK_APP, unit_num=0)
+    with httpx.Client(http2=True, verify=False, timeout=10) as client:
+        resp = client.post(
+            f"https://{address}:{GRPC_PORT}/",
+            headers={"content-type": "application/grpc", "te": "trailers"},  # codespell:ignore
+        )
+    # Traefik's default HTTPS forwarder also answers ALPN h2 + HTTP/2 with a
+    # 404 text/plain response; only the published TCP router reaches the gRPC
+    # server, which answers with an application/grpc response.
+    assert resp.http_version == "HTTP/2"
+    assert resp.headers.get("content-type", "").startswith("application/grpc")
+
+
+def assert_grpc_route(model: jubilant.Juju, *, timeout: float = 60) -> None:
+    """Assert the grpc-route TCP router is published and forwards gRPC to the workload.
+
+    Retries until the deadline to tolerate Traefik restarts while the static
+    entrypoint is republished.
+    """
+    deadline = time.monotonic() + timeout
+    last_error: Optional[Exception] = None
+    while time.monotonic() < deadline:
+        try:
+            _assert_grpc_route_once(model)
+            return
+        except (AssertionError, httpx.TransportError) as error:
+            last_error = error
+            time.sleep(5)
+    assert last_error is None, str(last_error)
 
 
 @contextmanager

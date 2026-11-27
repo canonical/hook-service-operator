@@ -16,7 +16,7 @@ context: |
   - Juju Secrets Protocol: Sensitive data exchange must use Juju 3.x native secrets. Cleartext credentials must never reside directly inside unencrypted relation databags.
 
   Files & Workspace Structure:
-  - charmcraft.yaml: Monolithic configuration manifest defining charm metadata, container primitives, system limits, relation interfaces (requires pg-database, oauth, openfga, receive-ca-cert, tenant-service-info, internal-route, logging, tracing; provides hydra-token-hook, metrics-endpoint, grafana-dashboard; peer hook-service), user-facing configs, and juju actions.
+  - charmcraft.yaml: Monolithic configuration manifest defining charm metadata, container primitives, system limits, relation interfaces (requires pg-database, oauth, openfga, receive-ca-cert, tenant-service-info, internal-route, grpc-route, logging, tracing; provides hydra-token-hook, metrics-endpoint, grafana-dashboard; peer hook-service), user-facing configs, and juju actions.
   - lib/: Charm libraries providing/consuming interfaces for integrating with other charms.
   - src/charm.py: Orchestrator component. Contains event subscriptions and the main `_holistic_handler` routing loop. Must be kept minimal.
   - src/services.py: Contains `WorkloadService` and `PebbleService` implementations managing container daemon state and workload versions.

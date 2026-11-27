@@ -48,6 +48,7 @@ from constants import (
     CERTIFICATE_TRANSFER_INTEGRATION_NAME,
     DATABASE_INTEGRATION_NAME,
     GRAFANA_DASHBOARD_INTEGRATION_NAME,
+    GRPC_ROUTE_INTEGRATION_NAME,
     INTERNAL_ROUTE_INTEGRATION_NAME,
     LOCAL_CERTIFICATES_PATH,
     LOCAL_CHARM_CERTIFICATES_FILE,
@@ -73,6 +74,7 @@ from exceptions import (
 )
 from integrations import (
     DatabaseConfig,
+    GrpcRouteIntegration,
     HydraHookIntegration,
     InternalIngressData,
     OAuthIntegration,
@@ -136,6 +138,8 @@ class HookServiceOperatorCharm(ops.CharmBase):
             INTERNAL_ROUTE_INTEGRATION_NAME,
             raw=True,
         )
+
+        self.grpc_route = GrpcRouteIntegration(self)
 
         self.metrics_endpoint = MetricsEndpointProvider(
             self,
@@ -270,6 +274,20 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._on_internal_route_changed,
         )
 
+        # grpc route
+        self.framework.observe(
+            self.on[GRPC_ROUTE_INTEGRATION_NAME].relation_joined,
+            self._on_grpc_route_changed,
+        )
+        self.framework.observe(
+            self.on[GRPC_ROUTE_INTEGRATION_NAME].relation_changed,
+            self._on_grpc_route_changed,
+        )
+        self.framework.observe(
+            self.on[GRPC_ROUTE_INTEGRATION_NAME].relation_broken,
+            self._on_grpc_route_changed,
+        )
+
         self.framework.observe(
             self.openfga_requirer.on.openfga_store_created,
             self._on_openfga_store_created,
@@ -348,6 +366,10 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self.internal_ingress.submit_to_traefik(internal_route_config)
         return True
 
+    def _ensure_grpc_ingress(self) -> bool:
+        self.grpc_route.submit_to_traefik()
+        return True
+
     def _ensure_database_migration(self) -> bool:
         if migration_is_ready(self):
             return True
@@ -416,6 +438,11 @@ class HookServiceOperatorCharm(ops.CharmBase):
     def _on_internal_route_changed(self, event: ops.RelationEvent) -> None:
         # needed due to how traefik_route lib is handling the event
         self.internal_ingress._relation = event.relation
+        self._holistic_handler(event)
+
+    def _on_grpc_route_changed(self, event: ops.RelationEvent) -> None:
+        # needed due to how traefik_route lib is handling the event
+        self.grpc_route.set_relation(event.relation)
         self._holistic_handler(event)
 
     def _on_hydra_hook_ready(self, event: ops.RelationEvent) -> None:
@@ -487,6 +514,7 @@ class HookServiceOperatorCharm(ops.CharmBase):
             self._ensure_secrets,
             self._ensure_hydra_relation,
             self._ensure_internal_ingress,
+            self._ensure_grpc_ingress,
             self._ensure_database_migration,
             self._ensure_openfga_model,
             self._ensure_tls,
