@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.0](https://github.com/canonical/hook-service-operator/compare/v1.3.0...v1.4.0) (2026-11-28)
+
+
+### Features
+
+* upgrade hook-service workload to v1.4.0 and migrate tenant-service to gRPC ([2c5feac](https://github.com/canonical/hook-service-operator/commit/2c5feac3e3e11f66a3898af4cac98a600be0e618))
+
+
+### Bug Fixes
+
+* ask for the actions' token through the workload's proxy ([88d9d00](https://github.com/canonical/hook-service-operator/commit/88d9d004fb97ac4ab9e0a397f98268af5b47ac1a))
+* ask for the actions' token through the workload's proxy ([#226](https://github.com/canonical/hook-service-operator/issues/226)) ([ba4852f](https://github.com/canonical/hook-service-operator/commit/ba4852fa7142869c3329fe202071374b5fc97a00))
+* **deps:** update dependency cosl to ~=1.12.0 ([5e1bde9](https://github.com/canonical/hook-service-operator/commit/5e1bde9cc661039fd81b4f5021acef74281b01eb))
+* **deps:** update dependency cosl to ~=1.12.0 ([#256](https://github.com/canonical/hook-service-operator/issues/256)) ([13b29a8](https://github.com/canonical/hook-service-operator/commit/13b29a89fca24c7704f02e737a0812e0275f04e0))
+* **deps:** update dependency pydantic to ~=2.14.0 ([4c33459](https://github.com/canonical/hook-service-operator/commit/4c334595a06b04d0618d3b128c5e8c7c494b7d92))
+* **deps:** update dependency pydantic to ~=2.14.0 ([#218](https://github.com/canonical/hook-service-operator/issues/218)) ([14cf533](https://github.com/canonical/hook-service-operator/commit/14cf533c8db4f17cad71a52b77e2fe477a125592))
+* require the openfga integration only when authorization is enabled ([74b6a8f](https://github.com/canonical/hook-service-operator/commit/74b6a8f93326cb446b0e1c9eeaed70b7995d7eaf))
+* require the openfga integration only when authorization is enabled ([#213](https://github.com/canonical/hook-service-operator/issues/213)) ([a0721d9](https://github.com/canonical/hook-service-operator/commit/a0721d9514464286982044c8a71778624a5c69bc))
+
 ## [1.3.0](https://github.com/canonical/hook-service-operator/compare/v1.2.0...v1.3.0) (2026-10-07)
 
 
